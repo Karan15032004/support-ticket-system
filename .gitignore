@@ -147,8 +147,29 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+dist/
+.DS_Store
 # Environments
 .env
+.env.local
+.env.production
+backend/.env
+frontend/.env
 .envrc
 .venv
 env/
@@ -156,6 +177,12 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# VS Code
+.vscode/
+
+# Misc
+*.log
 
 # Spyder project settings
 .spyderproject
@@ -216,3 +243,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Temporary test files
+backend/test.py
+backend/test_connection.py
+backend/create_test_user.py
+backend/gen_hash.py
+*.db
+frontend/dist/
