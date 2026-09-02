@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect} from 'react';
 import { useNavigate } from 'react-router-dom';
-import AgentNav from '../../components/AgentNav';
+import SupervisorNav from '../../components/SupervisorNav';
 import CreateTicketModal from '../../components/CreateTicketModal';
 import { getTickets } from '../../api/tickets';
 
-// ─── Constants (outside component — never recreated) ────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────────
 
 const PRIORITY_STYLES = {
   critical: 'bg-red-100 text-red-700 border border-red-200',
@@ -21,12 +21,13 @@ const STATUS_STYLES = {
   closed:   'bg-gray-100 text-gray-600',
 };
 
-function formatLabel(str) {
-  return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
+// ─── Pure helper functions (no hooks, defined outside component) ────────────────
 
-function timeAgo(dateStr) {
-  const diff    = Date.now() - new Date(dateStr).getTime();
+const formatLabel = (str) =>
+  str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+const timeAgo = (dateStr) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
   const hours   = Math.floor(minutes / 60);
   const days    = Math.floor(hours / 24);
@@ -34,7 +35,9 @@ function timeAgo(dateStr) {
   if (hours > 0)   return `${hours}h ago`;
   if (minutes > 0) return `${minutes}m ago`;
   return 'just now';
-}
+};
+
+// ─── Sub-components (defined outside main component) ───────────────────────────
 
 function SLABadge({ seconds }) {
   if (seconds === null || seconds === undefined)
@@ -42,8 +45,8 @@ function SLABadge({ seconds }) {
   if (seconds < 0)
     return <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded">Breached</span>;
 
-  const hrs   = Math.floor(seconds / 3600);
-  const mins  = Math.floor((seconds % 3600) / 60);
+  const hrs  = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
   const color = seconds < 3600
     ? 'text-red-600 bg-red-50'
     : seconds < 14400
@@ -57,9 +60,9 @@ function SLABadge({ seconds }) {
   );
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Main Component ─────────────────────────────────────────────────────────────
 
-export default function WorklistPage() {
+export default function TicketListPage() {
   const navigate = useNavigate();
 
   const [tickets,         setTickets]         = useState([]);
@@ -68,15 +71,16 @@ export default function WorklistPage() {
   const [error,           setError]           = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Separate state vars — same pattern as the fixed TicketListPage
   const [status,   setStatus]   = useState('');
   const [priority, setPriority] = useState('');
   const [page,     setPage]     = useState(1);
   const PAGE_SIZE = 20;
 
-  // useEffect reads state vars directly — no function dependency issues
+  // ── The only correct pattern: read state vars directly in useEffect ──────────
+  // No useCallback, no function defined outside, no stale closure issues.
+  // useEffect re-runs whenever status/priority/page change — that's all we need.
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false;   // prevents setting state if component unmounts mid-fetch
 
     async function load() {
       setLoading(true);
@@ -87,23 +91,26 @@ export default function WorklistPage() {
         if (priority) params.priority = priority;
 
         const data = await getTickets(params);
+
         if (!cancelled) {
           setTickets(data.tickets);
           setTotalCount(data.total_count);
         }
       } catch {
-        if (!cancelled) setError('Failed to load your tickets.');
+        if (!cancelled) setError('Failed to load tickets. Please try again.');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
     load();
-    return () => { cancelled = true; };
-  }, [status, priority, page]);
+    return () => { cancelled = true; };   // cleanup on re-render
+  }, [status, priority, page]);            // ← plain values, not a function
 
+  // Called by CreateTicketModal after a ticket is created successfully
+  // Resets page to 1 and re-triggers the useEffect above
   function handleCreated() {
-    setPage(1);
+    setPage(1);       // this triggers useEffect → re-fetches automatically
     setStatus('');
     setPriority('');
   }
@@ -116,37 +123,39 @@ export default function WorklistPage() {
   const startItem  = (page - 1) * PAGE_SIZE + 1;
   const endItem    = Math.min(page * PAGE_SIZE, totalCount);
 
+  // ── Render ───────────────────────────────────────────────────────────────────
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <AgentNav />
+      <SupervisorNav />
 
       <main className="max-w-7xl mx-auto px-4 py-8">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">My Tickets</h1>
+            <h1 className="text-2xl font-bold text-gray-900">All Tickets</h1>
             <p className="text-sm text-gray-500 mt-0.5">
               {loading
                 ? 'Loading…'
-                : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} assigned to you`}
+                : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} total`}
             </p>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <span className="text-lg leading-none">+</span>
             New Ticket
           </button>
         </div>
 
-        {/* Filters */}
+        {/* Filter bar */}
         <div className="flex items-center gap-3 mb-4">
           <select
             value={status}
             onChange={e => handleStatusFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Statuses</option>
             {['new', 'open', 'pending', 'resolved', 'closed'].map(s => (
@@ -157,7 +166,7 @@ export default function WorklistPage() {
           <select
             value={priority}
             onChange={e => handlePriorityFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Priorities</option>
             {['critical', 'high', 'medium', 'low'].map(p => (
@@ -168,13 +177,14 @@ export default function WorklistPage() {
           {(status || priority) && (
             <button
               onClick={handleClearFilters}
-              className="text-sm text-emerald-600 hover:text-emerald-800 underline"
+              className="text-sm text-blue-600 hover:text-blue-800 underline"
             >
               Clear filters
             </button>
           )}
         </div>
 
+        {/* Error */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
             {error}
@@ -185,17 +195,20 @@ export default function WorklistPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-gray-400">
-              <p className="text-sm">Loading your tickets…</p>
+              <div className="text-center">
+                <div className="text-4xl mb-3">⟳</div>
+                <p className="text-sm">Loading tickets…</p>
+              </div>
             </div>
           ) : tickets.length === 0 ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
-                <div className="text-4xl mb-3">🎉</div>
-                <p className="text-sm font-medium text-gray-600">
-                  {status || priority ? 'No tickets match these filters' : 'No tickets assigned to you'}
-                </p>
+                <div className="text-4xl mb-3">📭</div>
+                <p className="text-sm font-medium text-gray-600">No tickets found</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  {status || priority ? 'Try clearing the filters' : 'Check back later or ask your supervisor'}
+                  {status || priority
+                    ? 'Try clearing the filters'
+                    : 'Create the first ticket to get started'}
                 </p>
               </div>
             </div>
@@ -206,6 +219,7 @@ export default function WorklistPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assignee</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">SLA</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Updated</th>
                 </tr>
@@ -215,10 +229,10 @@ export default function WorklistPage() {
                   <tr
                     key={ticket.id}
                     onClick={() => navigate(`/tickets/${ticket.id}`)}
-                    className="hover:bg-emerald-50 cursor-pointer transition-colors group"
+                    className="hover:bg-blue-50 cursor-pointer transition-colors group"
                   >
                     <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-1">
+                      <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700 transition-colors line-clamp-1">
                         #{ticket.id} — {ticket.subject}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
@@ -234,6 +248,11 @@ export default function WorklistPage() {
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_STYLES[ticket.priority]}`}>
                         {formatLabel(ticket.priority)}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700">
+                      {ticket.assignee?.name ?? (
+                        <span className="text-gray-400 italic">Unassigned</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <SLABadge seconds={ticket.sla_remaining_seconds} />
@@ -262,7 +281,9 @@ export default function WorklistPage() {
               >
                 ← Previous
               </button>
-              <span className="text-sm text-gray-600 px-2">Page {page} of {totalPages}</span>
+              <span className="text-sm text-gray-600 px-2">
+                Page {page} of {totalPages}
+              </span>
               <button
                 onClick={() => setPage(p => p + 1)}
                 disabled={page >= totalPages}
@@ -275,6 +296,7 @@ export default function WorklistPage() {
         )}
       </main>
 
+      {/* Modal */}
       <CreateTicketModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}

@@ -1,17 +1,22 @@
 /**
  * AuthContext.jsx — Global Authentication State
+ *
+ * FIX: Removed useNavigate() because AuthProvider sits at the root level
+ * and useNavigate was conflicting with BrowserRouter, causing the
+ * "cannot render a Router inside another Router" error.
+ *
+ * Instead we use window.location.href for login/logout redirects.
+ * This causes a full page reload, but login/logout only happen once
+ * per session so the UX impact is zero.
  */
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import api from '../api/axios';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -39,10 +44,11 @@ export function AuthProvider({ children }) {
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
 
+    // Redirect based on role
     if (tokenData.role === 'supervisor') {
-      navigate('/dashboard');
+      window.location.href = '/dashboard';
     } else {
-      navigate('/my-tickets');
+      window.location.href = '/my-tickets';
     }
   };
 
@@ -50,7 +56,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
     setUser(null);
-    navigate('/login');
+    window.location.href = '/login';
   };
 
   if (loading) {

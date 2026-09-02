@@ -55,3 +55,12 @@ redirects the user automatically to the correct home screen."
 
 This also makes more sense for users — they don't need to know or choose
 their role when logging in. The system knows their role.
+
+---
+we added the categories to which our tickets could belong:
+-Billing:If user experiences any issue with billing,like why were they charged twice?
+-Technical:For users experiencing any technical issues,like some features not working or any inconsistencies.
+-How to:If users dont understand the working of any feature,they might ask us and this way our agents can reply to them 
+-Account:for account related issues
+-Feature request:If user wants to request any features
+-Other:These were all the general categories In Which I could think the issues could have come,if the user query was anything else,then that ticket will come under this category

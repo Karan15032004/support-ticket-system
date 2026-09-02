@@ -1,13 +1,13 @@
-/**
- * App.jsx — Route Configuration
- */
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
+
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/supervisor/DashboardPage';
+import TicketListPage from './pages/supervisor/TicketListPage';
 import WorklistPage from './pages/agent/WorklistPage';
+import TicketDetailPage from './pages/shared/TicketDetailPage';
 
 function RoleRedirect() {
   const { user } = useAuth();
@@ -16,22 +16,26 @@ function RoleRedirect() {
   return <Navigate to="/my-tickets" replace />;
 }
 
+function AppRoutes() {
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<RoleRedirect />} />
+        <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
+        <Route path="/tickets" element={<PrivateRoute><TicketListPage /></PrivateRoute>} />
+        <Route path="/my-tickets" element={<PrivateRoute><WorklistPage /></PrivateRoute>} />
+        <Route path="/tickets/:id" element={<PrivateRoute><TicketDetailPage /></PrivateRoute>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
+  );
+}
+
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-
-      <Route path="/" element={<RoleRedirect />} />
-
-      <Route element={<PrivateRoute role="supervisor" />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
-      </Route>
-
-      <Route element={<PrivateRoute role="agent" />}>
-        <Route path="/my-tickets" element={<WorklistPage />} />
-      </Route>
-
-      <Route path="*" element={<RoleRedirect />} />
-    </Routes>
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
