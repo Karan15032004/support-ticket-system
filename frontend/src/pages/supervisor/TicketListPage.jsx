@@ -1,8 +1,11 @@
-import { useState, useEffect} from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SupervisorNav from '../../components/SupervisorNav';
 import CreateTicketModal from '../../components/CreateTicketModal';
-import { getTickets } from '../../api/tickets';
+import BulkResultModal from '../../components/BulkResultModal';
+import {
+  getTickets, getAgents, bulkAssign, bulkClose, exportCSV,
+} from '../../api/tickets';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -21,13 +24,28 @@ const STATUS_STYLES = {
   closed:   'bg-gray-100 text-gray-600',
 };
 
-// ─── Pure helper functions (no hooks, defined outside component) ────────────────
+const CATEGORY_OPTIONS = [
+  { value: 'billing',         label: 'Billing' },
+  { value: 'technical',       label: 'Technical' },
+  { value: 'how_to',          label: 'How To' },
+  { value: 'account',         label: 'Account' },
+  { value: 'feature_request', label: 'Feature Request' },
+  { value: 'other',           label: 'Other' },
+];
+
+const SORT_OPTIONS = [
+  { value: 'updated_at', label: 'Last Updated' },
+  { value: 'created_at', label: 'Created Date' },
+  { value: 'priority',   label: 'Priority' },
+];
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 const formatLabel = (str) =>
-  str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  str ? str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
 
 const timeAgo = (dateStr) => {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff    = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
   const hours   = Math.floor(minutes / 60);
   const days    = Math.floor(hours / 24);
@@ -37,7 +55,7 @@ const timeAgo = (dateStr) => {
   return 'just now';
 };
 
-// ─── Sub-components (defined outside main component) ───────────────────────────
+// ─── SLA Badge ─────────────────────────────────────────────────────────────────
 
 function SLABadge({ seconds }) {
   if (seconds === null || seconds === undefined)
@@ -65,36 +83,72 @@ function SLABadge({ seconds }) {
 export default function TicketListPage() {
   const navigate = useNavigate();
 
+  // Data
   const [tickets,         setTickets]         = useState([]);
   const [totalCount,      setTotalCount]      = useState(0);
+  const [agents,          setAgents]          = useState([]);
   const [loading,         setLoading]         = useState(true);
   const [error,           setError]           = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const [status,   setStatus]   = useState('');
-  const [priority, setPriority] = useState('');
-  const [page,     setPage]     = useState(1);
+  // Filters — each a separate useState to match the useEffect dependency pattern
+  const [searchInput, setSearchInput] = useState('');  // what user types
+  const [search,      setSearch]      = useState('');  // debounced value sent to API
+  const [status,      setStatus]      = useState('');
+  const [priority,    setPriority]    = useState('');
+  const [category,    setCategory]    = useState('');
+  const [assigneeId,  setAssigneeId]  = useState('');
+  const [sort,        setSort]        = useState('updated_at');
+  const [order,       setOrder]       = useState('desc');
+  const [page,        setPage]        = useState(1);
   const PAGE_SIZE = 20;
 
-  // ── The only correct pattern: read state vars directly in useEffect ──────────
-  // No useCallback, no function defined outside, no stale closure issues.
-  // useEffect re-runs whenever status/priority/page change — that's all we need.
+  // Bulk action state
+  const [selectedIds,     setSelectedIds]     = useState(new Set());
+  const [bulkAction,      setBulkAction]      = useState('');
+  const [bulkAssignAgent, setBulkAssignAgent] = useState('');
+  const [bulkLoading,     setBulkLoading]     = useState(false);
+  const [bulkResults,     setBulkResults]     = useState(null);
+  const [showBulkModal,   setShowBulkModal]   = useState(false);
+
+  // ── 400ms debounce on search input ────────────────────────────────────────
+  // WHY DEBOUNCE?
+  // Without it, every keystroke fires an API call. With 400ms delay, we wait
+  // until the user pauses typing and fire ONE call. This prevents hammering
+  // the backend while the user is mid-word.
   useEffect(() => {
-    let cancelled = false;   // prevents setting state if component unmounts mid-fetch
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // ── Load agents list once on mount ────────────────────────────────────────
+  useEffect(() => {
+    getAgents().then(setAgents).catch(() => {});
+  }, []);
+
+  // ── Fetch tickets whenever any filter/sort/page changes ───────────────────
+  useEffect(() => {
+    let cancelled = false;
 
     async function load() {
       setLoading(true);
       setError('');
       try {
-        const params = { page, page_size: PAGE_SIZE };
-        if (status)   params.status   = status;
-        if (priority) params.priority = priority;
+        const params = { page, page_size: PAGE_SIZE, sort, order };
+        if (search)     params.search      = search;
+        if (status)     params.status      = status;
+        if (priority)   params.priority    = priority;
+        if (category)   params.category    = category;
+        if (assigneeId) params.assignee_id = assigneeId;
 
         const data = await getTickets(params);
-
         if (!cancelled) {
           setTickets(data.tickets);
           setTotalCount(data.total_count);
+          setSelectedIds(new Set()); // clear selection on new results
         }
       } catch {
         if (!cancelled) setError('Failed to load tickets. Please try again.');
@@ -104,26 +158,126 @@ export default function TicketListPage() {
     }
 
     load();
-    return () => { cancelled = true; };   // cleanup on re-render
-  }, [status, priority, page]);            // ← plain values, not a function
+    return () => { cancelled = true; };
+  }, [search, status, priority, category, assigneeId, sort, order, page]);
 
-  // Called by CreateTicketModal after a ticket is created successfully
-  // Resets page to 1 and re-triggers the useEffect above
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   function handleCreated() {
-    setPage(1);       // this triggers useEffect → re-fetches automatically
-    setStatus('');
-    setPriority('');
+    setPage(1);
+    setSearchInput(''); setSearch('');
+    setStatus(''); setPriority(''); setCategory(''); setAssigneeId('');
   }
 
-  function handleStatusFilter(val)   { setStatus(val);   setPage(1); }
-  function handlePriorityFilter(val) { setPriority(val); setPage(1); }
-  function handleClearFilters()      { setStatus(''); setPriority(''); setPage(1); }
+  function handleClearFilters() {
+    setSearchInput(''); setSearch('');
+    setStatus(''); setPriority(''); setCategory(''); setAssigneeId('');
+    setSort('updated_at'); setOrder('desc');
+    setPage(1);
+  }
 
+  function toggleSort(field) {
+    if (sort === field) {
+      setOrder(prev => prev === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSort(field);
+      setOrder('desc');
+    }
+    setPage(1);
+  }
+
+  // ── Checkbox selection ────────────────────────────────────────────────────
+
+  function toggleTicket(ticketId) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(ticketId) ? next.delete(ticketId) : next.add(ticketId);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selectedIds.size === tickets.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(tickets.map(t => t.id)));
+    }
+  }
+
+  // ── Bulk action execution ─────────────────────────────────────────────────
+
+  async function executeBulkAction() {
+    if (selectedIds.size === 0 || !bulkAction) return;
+    setBulkLoading(true);
+    try {
+      const ids = Array.from(selectedIds);
+      let result;
+
+      if (bulkAction === 'assign') {
+        if (!bulkAssignAgent) return;
+        result = await bulkAssign(ids, parseInt(bulkAssignAgent));
+      } else if (bulkAction === 'close') {
+        result = await bulkClose(ids);
+      }
+
+      setBulkResults(result);
+      setShowBulkModal(true);
+
+      // Re-fetch to reflect changes
+      const params = { page, page_size: PAGE_SIZE, sort, order };
+      if (search)     params.search      = search;
+      if (status)     params.status      = status;
+      if (priority)   params.priority    = priority;
+      if (category)   params.category    = category;
+      if (assigneeId) params.assignee_id = assigneeId;
+      const data = await getTickets(params);
+      setTickets(data.tickets);
+      setTotalCount(data.total_count);
+      setSelectedIds(new Set());
+      setBulkAction('');
+      setBulkAssignAgent('');
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Bulk action failed.');
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  // ── CSV Export ────────────────────────────────────────────────────────────
+
+  async function handleExportCSV() {
+    try {
+      const params = { sort, order };
+      if (search)     params.search      = search;
+      if (status)     params.status      = status;
+      if (priority)   params.priority    = priority;
+      if (category)   params.category    = category;
+      if (assigneeId) params.assignee_id = assigneeId;
+
+      const blob = await exportCSV(params);
+
+      // Standard browser pattern for triggering a file download from JS
+      const url  = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href     = url;
+      link.download = 'tickets_export.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to export CSV.');
+    }
+  }
+
+  // ── Derived ───────────────────────────────────────────────────────────────
+
+  const hasFilters = search || status || priority || category || assigneeId;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const startItem  = (page - 1) * PAGE_SIZE + 1;
   const endItem    = Math.min(page * PAGE_SIZE, totalCount);
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -136,53 +290,137 @@ export default function TicketListPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">All Tickets</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              {loading
-                ? 'Loading…'
-                : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} total`}
+              {loading ? 'Loading…' : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} total`}
             </p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <span className="text-lg leading-none">+</span>
-            New Ticket
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              📥 Export CSV
+            </button>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <span className="text-lg leading-none">+</span>
+              New Ticket
+            </button>
+          </div>
         </div>
 
-        {/* Filter bar */}
-        <div className="flex items-center gap-3 mb-4">
-          <select
-            value={status}
-            onChange={e => handleStatusFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+        {/* Search */}
+        <div className="mb-4">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Search tickets by subject or description…"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">All Statuses</option>
             {['new', 'open', 'pending', 'resolved', 'closed'].map(s => (
               <option key={s} value={s}>{formatLabel(s)}</option>
             ))}
           </select>
 
-          <select
-            value={priority}
-            onChange={e => handlePriorityFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+          <select value={priority} onChange={e => { setPriority(e.target.value); setPage(1); }}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">All Priorities</option>
             {['critical', 'high', 'medium', 'low'].map(p => (
               <option key={p} value={p}>{formatLabel(p)}</option>
             ))}
           </select>
 
-          {(status || priority) && (
-            <button
-              onClick={handleClearFilters}
-              className="text-sm text-blue-600 hover:text-blue-800 underline"
-            >
-              Clear filters
+          <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">All Categories</option>
+            {CATEGORY_OPTIONS.map(c => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+
+          <select value={assigneeId} onChange={e => { setAssigneeId(e.target.value); setPage(1); }}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">All Assignees</option>
+            {agents.map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+
+          {hasFilters && (
+            <button onClick={handleClearFilters} className="text-sm text-blue-600 hover:text-blue-800 underline">
+              Clear all filters
             </button>
           )}
         </div>
+
+        {/* Sort buttons */}
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-gray-500 font-medium">Sort by:</span>
+          {SORT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => toggleSort(opt.value)}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                sort === opt.value
+                  ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
+                  : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              {opt.label}
+              {sort === opt.value && <span className="ml-1">{order === 'desc' ? '↓' : '↑'}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Bulk action bar — shown only when tickets are selected */}
+        {selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <span className="text-sm font-medium text-blue-800">
+              {selectedIds.size} ticket{selectedIds.size > 1 ? 's' : ''} selected
+            </span>
+
+            <select value={bulkAction} onChange={e => setBulkAction(e.target.value)}
+              className="border border-blue-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Choose action…</option>
+              <option value="assign">Reassign</option>
+              <option value="close">Close</option>
+            </select>
+
+            {bulkAction === 'assign' && (
+              <select value={bulkAssignAgent} onChange={e => setBulkAssignAgent(e.target.value)}
+                className="border border-blue-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Select agent…</option>
+                {agents.map(a => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={executeBulkAction}
+              disabled={bulkLoading || !bulkAction || (bulkAction === 'assign' && !bulkAssignAgent)}
+              className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {bulkLoading ? 'Processing…' : 'Apply'}
+            </button>
+
+            <button
+              onClick={() => { setSelectedIds(new Set()); setBulkAction(''); setBulkAssignAgent(''); }}
+              className="text-sm text-blue-600 hover:text-blue-800 underline ml-auto"
+            >
+              Deselect all
+            </button>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -206,9 +444,7 @@ export default function TicketListPage() {
                 <div className="text-4xl mb-3">📭</div>
                 <p className="text-sm font-medium text-gray-600">No tickets found</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  {status || priority
-                    ? 'Try clearing the filters'
-                    : 'Create the first ticket to get started'}
+                  {hasFilters ? 'Try clearing the filters' : 'Create the first ticket to get started'}
                 </p>
               </div>
             </div>
@@ -216,6 +452,15 @@ export default function TicketListPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-4 py-3 w-10">
+                    {/* Select-all checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === tickets.length && tickets.length > 0}
+                      onChange={toggleAll}
+                      className="rounded border-gray-300 accent-blue-600"
+                    />
+                  </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
@@ -228,10 +473,20 @@ export default function TicketListPage() {
                 {tickets.map(ticket => (
                   <tr
                     key={ticket.id}
-                    onClick={() => navigate(`/tickets/${ticket.id}`)}
-                    className="hover:bg-blue-50 cursor-pointer transition-colors group"
+                    className={`hover:bg-blue-50 cursor-pointer transition-colors group ${
+                      selectedIds.has(ticket.id) ? 'bg-blue-50/50' : ''
+                    }`}
                   >
-                    <td className="px-4 py-3">
+                    {/* Checkbox cell — stopPropagation prevents row click nav */}
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(ticket.id)}
+                        onChange={() => toggleTicket(ticket.id)}
+                        className="rounded border-gray-300 accent-blue-600"
+                      />
+                    </td>
+                    <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700 transition-colors line-clamp-1">
                         #{ticket.id} — {ticket.subject}
                       </p>
@@ -239,25 +494,23 @@ export default function TicketListPage() {
                         {ticket.requester_name} · {formatLabel(ticket.category)}
                       </p>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[ticket.status]}`}>
                         {formatLabel(ticket.status)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_STYLES[ticket.priority]}`}>
                         {formatLabel(ticket.priority)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700">
-                      {ticket.assignee?.name ?? (
-                        <span className="text-gray-400 italic">Unassigned</span>
-                      )}
+                    <td className="px-4 py-3 text-sm text-gray-700" onClick={() => navigate(`/tickets/${ticket.id}`)}>
+                      {ticket.assignee?.name ?? <span className="text-gray-400 italic">Unassigned</span>}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       <SLABadge seconds={ticket.sla_remaining_seconds} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
+                    <td className="px-4 py-3 text-xs text-gray-500" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       {timeAgo(ticket.updated_at)}
                     </td>
                   </tr>
@@ -274,21 +527,13 @@ export default function TicketListPage() {
               Showing {startItem}–{endItem} of {totalCount} tickets
             </p>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage(p => p - 1)}
-                disabled={page <= 1}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
+              <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 ← Previous
               </button>
-              <span className="text-sm text-gray-600 px-2">
-                Page {page} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(p => p + 1)}
-                disabled={page >= totalPages}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
+              <span className="text-sm text-gray-600 px-2">Page {page} of {totalPages}</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 Next →
               </button>
             </div>
@@ -296,11 +541,17 @@ export default function TicketListPage() {
         )}
       </main>
 
-      {/* Modal */}
       <CreateTicketModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreated={handleCreated}
+      />
+
+      <BulkResultModal
+        isOpen={showBulkModal}
+        onClose={() => setShowBulkModal(false)}
+        results={bulkResults?.results || []}
+        title={bulkAction === 'assign' ? 'Bulk Reassign Results' : 'Bulk Close Results'}
       />
     </div>
   );

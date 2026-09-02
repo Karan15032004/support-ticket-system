@@ -1,59 +1,53 @@
 """
 routers/tickets.py — All Ticket-Related API Endpoints
 
-This file handles everything about tickets:
-  - Creating tickets
-  - Listing tickets (with basic filtering for Phase 2; full server-side search in Phase 3)
-  - Getting a single ticket
-  - Updating ticket fields
-  - Changing ticket status (with lifecycle validation)
-  - Adding/getting replies
-  - Getting the event timeline
-  - Adding/removing collaborators
+Phase 2 (unchanged):
+  POST   /tickets/                     — Create ticket
+  GET    /tickets/{id}                 — Get single ticket
+  PUT    /tickets/{id}                 — Update fields
+  PUT    /tickets/{id}/status          — Change status (lifecycle + SLA logic)
+  GET    /tickets/{id}/replies         — Get replies
+  POST   /tickets/{id}/replies         — Add reply
+  GET    /tickets/{id}/events          — Immutable timeline
+  GET    /tickets/{id}/collaborators   — Get collaborators
+  POST   /tickets/{id}/collaborators   — Add collaborator
+  DELETE /tickets/{id}/collaborators/{agent_id} — Remove collaborator
+  GET    /tickets/meta/agents          — Agents list for dropdowns
 
-HOW ROUTERS WORK IN FASTAPI:
-  Instead of putting ALL routes in main.py (which would become huge),
-  we split them into "routers" — each router is a mini-app for one topic.
-  This file handles /tickets/* endpoints.
-  main.py will "include" this router with: app.include_router(tickets_router)
+Phase 3 additions:
+  GET    /tickets/               — UPGRADED: ?search, ?category, ?assignee_id, ?sort, ?order
+  GET    /tickets/export         — CSV download with same filters (supervisor only)
+  POST   /tickets/bulk-assign    — Bulk reassign, per-ticket results (supervisor only)
+  POST   /tickets/bulk-close     — Bulk close, per-ticket results (supervisor only)
+  PUT    /tickets/{id}/archive   — Soft delete (supervisor only)
+  PUT    /tickets/{id}/restore   — Un-archive (supervisor only)
 
-SLA LOGIC (important — understand this):
-  When a ticket is created:
-    response_due_at = created_at + SLA target (based on priority)
-
-  When ticket → Pending:
-    pending_since = now()   ← record when we entered pending
-
-  When ticket leaves Pending → Open:
-    total_paused_seconds += (now() - pending_since).total_seconds()
-    pending_since = None    ← clear the pending marker
-
-  Effective remaining = (response_due_at + timedelta(seconds=total_paused_seconds)) - now()
-  Negative = already breached.
-
-LEGAL STATUS TRANSITIONS:
-  new      → open, pending
-  open     → pending, resolved
-  pending  → open, resolved
-  resolved → closed, open (reopen — within 7 days only)
-  closed   → open (reopen — within 7 days only, server checks)
+CRITICAL ROUTE ORDERING:
+  /export, /bulk-assign, /bulk-close, /meta/agents must be defined
+  BEFORE /{ticket_id} — FastAPI matches top-to-bottom, so "export" would
+  be treated as a ticket_id integer and fail with a 422 if defined after.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, case
 from datetime import datetime, timedelta
 from typing import List, Optional
+import csv
+import io
 
 from ..database import get_db
 from ..models import (
-    Ticket, TicketEvent, Reply, Collaborator, User,
-    TicketStatus, TicketPriority, EventType, UserRole
+    Ticket, TicketEvent, Reply, Collaborator, User, SlaAlert,
+    TicketStatus, TicketPriority, TicketCategory, EventType, UserRole
 )
 from ..schemas import (
     TicketCreate, TicketUpdate, TicketResponse, TicketListResponse,
     StatusChangeRequest, ReplyCreate, ReplyResponse,
     TicketEventResponse, CollaboratorAdd, CollaboratorResponse,
-    UserBriefResponse
+    UserBriefResponse,
+    BulkAssignRequest, BulkCloseRequest, BulkResultResponse, BulkResultItem,
 )
 from ..auth import get_current_user
 
@@ -61,7 +55,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
 # ─────────────────────────────────────────────
-# Helper: SLA target in hours based on priority
+# SLA helpers
 # ─────────────────────────────────────────────
 
 SLA_HOURS = {
@@ -74,48 +68,27 @@ SLA_HOURS = {
 
 def compute_sla_remaining(ticket: Ticket) -> Optional[float]:
     """
-    Calculate how many seconds are left before this ticket breaches SLA.
-    
-    Returns:
-      Positive number → seconds remaining (SLA not yet breached)
-      Negative number → seconds PAST the deadline (already breached)
-      None → no deadline set (ticket has no response_due_at)
-    
-    Why do we add total_paused_seconds?
-    Because the clock was paused while the ticket was in "Pending" status.
-    Those paused seconds are "free time" — they don't count against the agent.
-    So we extend the deadline by that amount.
-    
-    Example:
-      response_due_at = 1:00 PM
-      total_paused_seconds = 3600 (1 hour of pending time)
-      effective_deadline = 2:00 PM
-      now = 1:30 PM
-      remaining = 30 minutes = 1800 seconds
+    Seconds remaining before SLA breach.
+    Positive = time left. Negative = already breached. None = no deadline.
+    Accounts for time paused in Pending status (not the agent's fault).
     """
     if not ticket.response_due_at:
         return None
 
-    # If currently pending, we need to account for the ongoing pause too
     current_pause = 0.0
     if ticket.status == TicketStatus.pending and ticket.pending_since:
         current_pause = (datetime.utcnow() - ticket.pending_since).total_seconds()
 
     total_paused = ticket.total_paused_seconds + current_pause
     effective_deadline = ticket.response_due_at + timedelta(seconds=total_paused)
-    remaining = (effective_deadline - datetime.utcnow()).total_seconds()
-    return remaining
+    return (effective_deadline - datetime.utcnow()).total_seconds()
 
 
 def ticket_to_response(ticket: Ticket) -> TicketResponse:
     """
-    Convert a SQLAlchemy Ticket object into a TicketResponse Pydantic object.
-    
-    We do this manually (instead of automatic conversion) because we need
-    to add the computed 'sla_remaining_seconds' field which doesn't exist
-    in the database — it's calculated on the fly.
-    
-    Think of this as: database object → API-safe JSON-ready object
+    Converts SQLAlchemy Ticket → Pydantic TicketResponse.
+    Done manually because we need to inject the computed sla_remaining_seconds
+    field, which doesn't exist in the database.
     """
     return TicketResponse(
         id=ticket.id,
@@ -130,14 +103,14 @@ def ticket_to_response(ticket: Ticket) -> TicketResponse:
             id=ticket.assignee.id,
             name=ticket.assignee.name,
             email=ticket.assignee.email,
-            role=ticket.assignee.role
+            role=ticket.assignee.role,
         ) if ticket.assignee else None,
         created_by=ticket.created_by,
         creator=UserBriefResponse(
             id=ticket.creator.id,
             name=ticket.creator.name,
             email=ticket.creator.email,
-            role=ticket.creator.role
+            role=ticket.creator.role,
         ) if ticket.creator else None,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
@@ -150,74 +123,369 @@ def ticket_to_response(ticket: Ticket) -> TicketResponse:
 
 
 # ─────────────────────────────────────────────
-# LEGAL STATUS TRANSITIONS MAP
+# Status transition rules
 # ─────────────────────────────────────────────
 
 LEGAL_TRANSITIONS = {
-    TicketStatus.new: [TicketStatus.open, TicketStatus.pending],
-    TicketStatus.open: [TicketStatus.pending, TicketStatus.resolved],
-    TicketStatus.pending: [TicketStatus.open, TicketStatus.resolved],
+    TicketStatus.new:      [TicketStatus.open, TicketStatus.pending],
+    TicketStatus.open:     [TicketStatus.pending, TicketStatus.resolved],
+    TicketStatus.pending:  [TicketStatus.open, TicketStatus.resolved],
     TicketStatus.resolved: [TicketStatus.closed, TicketStatus.open],
-    TicketStatus.closed: [TicketStatus.open],  # reopen, but 7-day check happens separately
+    TicketStatus.closed:   [TicketStatus.open],
 }
 
 
-# ─────────────────────────────────────────────
-# Helper: Can this user act on this ticket?
-# ─────────────────────────────────────────────
-
 def can_user_act_on_ticket(ticket: Ticket, user: User, db: Session) -> bool:
-    """
-    Agents can only act on tickets where they are:
-      a) the primary assignee, OR
-      b) a collaborator
-    
-    Supervisors can act on ANY ticket.
-    
-    Returns True if allowed, False if not.
-    """
+    """Supervisors can act on any ticket. Agents only on their own or collaborated."""
     if user.role == UserRole.supervisor:
         return True
-
-    # Check if agent is the assignee
     if ticket.assignee_id == user.id:
         return True
-
-    # Check if agent is a collaborator
     collab = db.query(Collaborator).filter(
         Collaborator.ticket_id == ticket.id,
-        Collaborator.agent_id == user.id
+        Collaborator.agent_id == user.id,
     ).first()
     return collab is not None
 
 
 # ─────────────────────────────────────────────
-# POST /tickets — Create a new ticket
+# Phase 3 helpers — shared filtering + sorting
+# ─────────────────────────────────────────────
+
+def build_filtered_query(
+    db: Session,
+    current_user: User,
+    search: Optional[str] = None,
+    ticket_status: Optional[TicketStatus] = None,
+    priority: Optional[TicketPriority] = None,
+    category: Optional[TicketCategory] = None,
+    assignee_id: Optional[int] = None,
+    include_archived: bool = False,
+):
+    """
+    Builds a SQLAlchemy query with all filters applied IN SQL.
+    Shared by GET /tickets/ and GET /tickets/export so both always
+    apply the exact same filters — export always matches the current view.
+
+    WHY SHARED?
+    If we duplicated the filter logic, a change in one place but not the
+    other would cause the CSV to export different rows than the table shows.
+    DRY (Don't Repeat Yourself) prevents that class of bug.
+    """
+    query = db.query(Ticket)
+
+    if not include_archived:
+        query = query.filter(Ticket.archived == False)
+
+    # Agents only see their own tickets
+    if current_user.role == UserRole.agent:
+        collab_ticket_ids = db.query(Collaborator.ticket_id).filter(
+            Collaborator.agent_id == current_user.id
+        ).subquery()
+        query = query.filter(
+            (Ticket.assignee_id == current_user.id) |
+            (Ticket.id.in_(collab_ticket_ids))
+        )
+
+    # SQL ILIKE = case-insensitive text search (never filter in Python)
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                Ticket.subject.ilike(pattern),
+                Ticket.description.ilike(pattern),
+            )
+        )
+
+    if ticket_status:
+        query = query.filter(Ticket.status == ticket_status)
+
+    if priority:
+        query = query.filter(Ticket.priority == priority)
+
+    if category:
+        query = query.filter(Ticket.category == category)
+
+    if assignee_id:
+        query = query.filter(Ticket.assignee_id == assignee_id)
+
+    return query
+
+
+def apply_sorting(query, sort: str = "updated_at", order: str = "desc"):
+    """
+    Applies ORDER BY to the query.
+
+    Priority needs a SQL CASE expression because alphabetical order
+    ('critical', 'high', 'low', 'medium') does not match severity order.
+    We map: critical=1, high=2, medium=3, low=4 so sorting by this number
+    gives the correct urgency ordering.
+    """
+    if sort == "priority":
+        priority_order = case(
+            (Ticket.priority == TicketPriority.critical, 1),
+            (Ticket.priority == TicketPriority.high, 2),
+            (Ticket.priority == TicketPriority.medium, 3),
+            (Ticket.priority == TicketPriority.low, 4),
+            else_=5,
+        )
+        query = query.order_by(
+            priority_order.asc() if order == "asc" else priority_order.desc()
+        )
+    elif sort == "created_at":
+        query = query.order_by(
+            Ticket.created_at.asc() if order == "asc" else Ticket.created_at.desc()
+        )
+    else:
+        # Default: updated_at
+        query = query.order_by(
+            Ticket.updated_at.asc() if order == "asc" else Ticket.updated_at.desc()
+        )
+    return query
+
+
+# ═════════════════════════════════════════════
+# IMPORTANT: Static routes BEFORE /{ticket_id}
+# FastAPI matches routes top-to-bottom.
+# /export, /bulk-assign, /bulk-close, /meta/agents must come first
+# or FastAPI tries to parse them as integer ticket_ids and returns 422.
+# ═════════════════════════════════════════════
+
+# ─────────────────────────────────────────────
+# POST /tickets/bulk-assign (Phase 3)
+# ─────────────────────────────────────────────
+
+@router.post("/bulk-assign", response_model=BulkResultResponse)
+def bulk_assign_tickets(
+    data: BulkAssignRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Reassigns multiple tickets to one agent in a single request.
+
+    Does NOT fail the whole batch if one ticket can't be reassigned.
+    Returns [{ticket_id, success, reason}] for every ticket so the
+    frontend can show exactly what happened to each one.
+    """
+    if current_user.role != UserRole.supervisor:
+        raise HTTPException(status_code=403, detail="Only supervisors can bulk-reassign tickets")
+
+    new_agent = db.query(User).filter(User.id == data.assignee_id).first()
+    if not new_agent:
+        raise HTTPException(status_code=404, detail="Target agent not found")
+    if new_agent.role != UserRole.agent:
+        raise HTTPException(status_code=400, detail="Can only assign tickets to agents, not supervisors")
+
+    results = []
+
+    for ticket_id in data.ticket_ids:
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+
+        if not ticket:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=f"Ticket #{ticket_id} not found"))
+            continue
+
+        if ticket.archived:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=f"Ticket #{ticket_id} is archived — unarchive it first"))
+            continue
+
+        if ticket.status == TicketStatus.closed:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=f"Ticket #{ticket_id} is closed — cannot reassign closed tickets"))
+            continue
+
+        if ticket.assignee_id == data.assignee_id:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=f"Ticket #{ticket_id} is already assigned to {new_agent.name}"))
+            continue
+
+        old_agent = db.query(User).filter(User.id == ticket.assignee_id).first()
+        old_name = old_agent.name if old_agent else "Unassigned"
+
+        ticket.assignee_id = data.assignee_id
+        ticket.updated_at = datetime.utcnow()
+
+        db.add(TicketEvent(
+            ticket_id=ticket.id,
+            event_type=EventType.reassigned,
+            old_value=old_name,
+            new_value=new_agent.name,
+            actor_id=current_user.id,
+        ))
+
+        results.append(BulkResultItem(ticket_id=ticket_id, success=True,
+            reason=f"Reassigned from {old_name} to {new_agent.name}"))
+
+    db.commit()
+    return BulkResultResponse(results=results)
+
+
+# ─────────────────────────────────────────────
+# POST /tickets/bulk-close (Phase 3)
+# ─────────────────────────────────────────────
+
+@router.post("/bulk-close", response_model=BulkResultResponse)
+def bulk_close_tickets(
+    data: BulkCloseRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Closes multiple tickets in one request.
+    Same per-ticket result pattern as bulk-assign.
+    A ticket must be in 'resolved' status to be closeable.
+    """
+    if current_user.role != UserRole.supervisor:
+        raise HTTPException(status_code=403, detail="Only supervisors can bulk-close tickets")
+
+    results = []
+
+    for ticket_id in data.ticket_ids:
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+
+        if not ticket:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=f"Ticket #{ticket_id} not found"))
+            continue
+
+        if ticket.archived:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=f"Ticket #{ticket_id} is archived"))
+            continue
+
+        if ticket.status == TicketStatus.closed:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=f"Ticket #{ticket_id} is already closed"))
+            continue
+
+        allowed_next = LEGAL_TRANSITIONS.get(ticket.status, [])
+        if TicketStatus.closed not in allowed_next:
+            results.append(BulkResultItem(ticket_id=ticket_id, success=False,
+                reason=(f"Ticket #{ticket_id} is '{ticket.status.value}' — "
+                        f"must be 'resolved' before closing")))
+            continue
+
+        ticket.status = TicketStatus.closed
+        ticket.closed_at = datetime.utcnow()
+        ticket.updated_at = datetime.utcnow()
+
+        db.add(TicketEvent(
+            ticket_id=ticket.id,
+            event_type=EventType.status_changed,
+            old_value=ticket.status.value if ticket.status else "resolved",
+            new_value="closed",
+            actor_id=current_user.id,
+        ))
+
+        results.append(BulkResultItem(ticket_id=ticket_id, success=True,
+            reason="Closed successfully"))
+
+    db.commit()
+    return BulkResultResponse(results=results)
+
+
+# ─────────────────────────────────────────────
+# GET /tickets/export (Phase 3)
+# ─────────────────────────────────────────────
+
+@router.get("/export")
+def export_tickets_csv(
+    status: Optional[TicketStatus] = None,
+    priority: Optional[TicketPriority] = None,
+    category: Optional[TicketCategory] = None,
+    assignee_id: Optional[int] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = "updated_at",
+    order: Optional[str] = "desc",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Exports the currently-filtered ticket queue as a CSV file download.
+
+    Uses the same build_filtered_query() helper as GET /tickets/ so the
+    exported data always matches exactly what the supervisor sees on screen.
+    No pagination — exports ALL matching tickets.
+
+    WHY StreamingResponse?
+    We write CSV row-by-row into a StringIO buffer and stream it back.
+    This is the correct pattern for file downloads in FastAPI.
+    The browser receives it as a file attachment (Content-Disposition header).
+    """
+    if current_user.role != UserRole.supervisor:
+        raise HTTPException(status_code=403, detail="Only supervisors can export tickets")
+
+    query = build_filtered_query(
+        db, current_user,
+        search=search, ticket_status=status, priority=priority,
+        category=category, assignee_id=assignee_id,
+    )
+    query = apply_sorting(query, sort=sort or "updated_at", order=order or "desc")
+    tickets = query.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "ID", "Subject", "Requester", "Status", "Priority", "Category",
+        "Assignee", "Created At", "Updated At", "SLA Remaining (seconds)",
+    ])
+
+    for t in tickets:
+        writer.writerow([
+            t.id,
+            t.subject,
+            t.requester_name,
+            t.status.value if t.status else "",
+            t.priority.value if t.priority else "",
+            t.category.value if t.category else "",
+            t.assignee.name if t.assignee else "Unassigned",
+            t.created_at.isoformat() if t.created_at else "",
+            t.updated_at.isoformat() if t.updated_at else "",
+            round(compute_sla_remaining(t) or 0, 0),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=tickets_export.csv"},
+    )
+
+
+# ─────────────────────────────────────────────
+# GET /tickets/meta/agents
+# ─────────────────────────────────────────────
+
+@router.get("/meta/agents", response_model=List[UserBriefResponse])
+def get_agents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns all active agents for dropdowns (assignee, collaborator, bulk assign)."""
+    return db.query(User).filter(
+        User.role == UserRole.agent,
+        User.is_active == True,
+    ).all()
+
+
+# ─────────────────────────────────────────────
+# POST /tickets/ — Create ticket
 # ─────────────────────────────────────────────
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
 def create_ticket(
     data: TicketCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Creates a new ticket.
-    
-    What this endpoint does, step by step:
-    1. Calculate response_due_at based on priority
-    2. Create the Ticket row in the database
-    3. Write a 'ticket_created' event to ticket_events (immutable log)
-    4. Return the created ticket
-    
-    Who can call this: Any logged-in user (supervisor or agent).
-    """
-    # Step 1: Calculate the SLA deadline
-    # timedelta(hours=X) creates a time duration object
+    """Creates a new ticket and logs a ticket_created event."""
     sla_hours = SLA_HOURS[data.priority]
     response_due_at = datetime.utcnow() + timedelta(hours=sla_hours)
 
-    # Step 2: Create the ticket
     ticket = Ticket(
         subject=data.subject,
         description=data.description,
@@ -231,28 +499,23 @@ def create_ticket(
         total_paused_seconds=0.0,
     )
     db.add(ticket)
-    db.flush()  # flush writes to DB but doesn't commit yet — this gives us ticket.id
+    db.flush()
 
-    # Step 3: Log the creation event (immutable — never deleted)
-    event = TicketEvent(
+    db.add(TicketEvent(
         ticket_id=ticket.id,
         event_type=EventType.ticket_created,
         old_value=None,
         new_value=ticket.subject,
         actor_id=current_user.id,
-    )
-    db.add(event)
+    ))
 
-    # Step 4: Commit everything at once
-    # If anything fails above, db.rollback() is called automatically
     db.commit()
     db.refresh(ticket)
-
     return ticket_to_response(ticket)
 
 
 # ─────────────────────────────────────────────
-# GET /tickets — List tickets
+# GET /tickets/ — List tickets (Phase 3 upgraded)
 # ─────────────────────────────────────────────
 
 @router.get("/", response_model=TicketListResponse)
@@ -261,62 +524,38 @@ def list_tickets(
     page_size: int = 20,
     status: Optional[TicketStatus] = None,
     priority: Optional[TicketPriority] = None,
+    category: Optional[TicketCategory] = None,
+    assignee_id: Optional[int] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = "updated_at",
+    order: Optional[str] = "desc",
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Returns a paginated list of tickets.
-    
-    Phase 2: Basic filtering (status, priority) + pagination.
-    Phase 3: Will add search, all filters, sorting — all in SQL.
-    
-    IMPORTANT: Pagination happens IN THE DATABASE (LIMIT/OFFSET),
-    not in Python. We never load all tickets into memory.
-    
-    Role-based filtering:
-      Supervisor: sees ALL tickets (except archived)
-      Agent: only sees tickets where they are assignee OR collaborator
-    
-    Query params:
-      page      → which page (starts at 1)
-      page_size → how many per page (default 20)
-      status    → filter by status (optional)
-      priority  → filter by priority (optional)
+    Returns paginated, filtered, sorted tickets.
+
+    Phase 3 additions over Phase 2:
+      ?search=      — SQL ILIKE across subject + description
+      ?category=    — filter by category
+      ?assignee_id= — filter by assignee
+      ?sort=        — created_at | updated_at | priority
+      ?order=       — asc | desc
+
+    ALL filtering/sorting/pagination happens in SQL. Python never filters in memory.
+    Response includes total_count for frontend pagination display.
     """
-    # Start building the query — we'll add filters step by step
-    query = db.query(Ticket).filter(Ticket.archived == False)
-
-    # Role-based filtering
-    if current_user.role == UserRole.agent:
-        # Agent sees tickets where they are assignee OR collaborator
-        # This is an OR condition across two tables
-        collab_ticket_ids = db.query(Collaborator.ticket_id).filter(
-            Collaborator.agent_id == current_user.id
-        ).subquery()
-
-        query = query.filter(
-            (Ticket.assignee_id == current_user.id) |
-            (Ticket.id.in_(collab_ticket_ids))
-        )
-
-    # Apply optional filters
-    if status:
-        query = query.filter(Ticket.status == status)
-    if priority:
-        query = query.filter(Ticket.priority == priority)
-
-    # Count BEFORE applying pagination (needed for "X of Y" display)
-    total_count = query.count()
-
-    # Apply pagination: skip (page-1)*page_size rows, take page_size rows
-    offset = (page - 1) * page_size
-    tickets = (
-        query
-        .order_by(Ticket.updated_at.desc())  # newest activity first
-        .offset(offset)
-        .limit(page_size)
-        .all()
+    query = build_filtered_query(
+        db, current_user,
+        search=search, ticket_status=status, priority=priority,
+        category=category, assignee_id=assignee_id,
     )
+
+    total_count = query.count()
+    query = apply_sorting(query, sort=sort or "updated_at", order=order or "desc")
+
+    offset = (page - 1) * page_size
+    tickets = query.offset(offset).limit(page_size).all()
 
     return TicketListResponse(
         tickets=[ticket_to_response(t) for t in tickets],
@@ -327,39 +566,101 @@ def list_tickets(
 
 
 # ─────────────────────────────────────────────
-# GET /tickets/{ticket_id} — Get a single ticket
+# PUT /tickets/{ticket_id}/archive (Phase 3)
+# ─────────────────────────────────────────────
+
+@router.put("/{ticket_id}/archive", response_model=TicketResponse)
+def archive_ticket(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Soft-deletes a ticket by setting archived=True.
+    Archived tickets are hidden from all queues but data is preserved.
+    Only supervisors can archive.
+    """
+    if current_user.role != UserRole.supervisor:
+        raise HTTPException(status_code=403, detail="Only supervisors can archive tickets")
+
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.archived:
+        raise HTTPException(status_code=400, detail="Ticket is already archived")
+
+    ticket.archived = True
+    ticket.updated_at = datetime.utcnow()
+
+    db.add(TicketEvent(
+        ticket_id=ticket.id,
+        event_type=EventType.ticket_archived,
+        old_value=None,
+        new_value="archived",
+        actor_id=current_user.id,
+    ))
+
+    db.commit()
+    db.refresh(ticket)
+    return ticket_to_response(ticket)
+
+
+# ─────────────────────────────────────────────
+# PUT /tickets/{ticket_id}/restore (Phase 3)
+# ─────────────────────────────────────────────
+
+@router.put("/{ticket_id}/restore", response_model=TicketResponse)
+def restore_ticket(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Restores an archived ticket. Only supervisors can restore."""
+    if current_user.role != UserRole.supervisor:
+        raise HTTPException(status_code=403, detail="Only supervisors can restore tickets")
+
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if not ticket.archived:
+        raise HTTPException(status_code=400, detail="Ticket is not archived")
+
+    ticket.archived = False
+    ticket.updated_at = datetime.utcnow()
+
+    db.add(TicketEvent(
+        ticket_id=ticket.id,
+        event_type=EventType.ticket_restored,
+        old_value="archived",
+        new_value="active",
+        actor_id=current_user.id,
+    ))
+
+    db.commit()
+    db.refresh(ticket)
+    return ticket_to_response(ticket)
+
+
+# ─────────────────────────────────────────────
+# GET /tickets/{ticket_id}
 # ─────────────────────────────────────────────
 
 @router.get("/{ticket_id}", response_model=TicketResponse)
 def get_ticket(
     ticket_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Returns full details for one ticket.
-    
-    Access control:
-      Supervisor: can see any ticket
-      Agent: can only see tickets they are assignee or collaborator on
-    """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    # Check access for agents
     if not can_user_act_on_ticket(ticket, current_user, db):
-        raise HTTPException(
-            status_code=403,
-            detail="You don't have access to this ticket"
-        )
-
+        raise HTTPException(status_code=403, detail="You don't have access to this ticket")
     return ticket_to_response(ticket)
 
 
 # ─────────────────────────────────────────────
-# PUT /tickets/{ticket_id} — Update ticket fields
+# PUT /tickets/{ticket_id}
 # ─────────────────────────────────────────────
 
 @router.put("/{ticket_id}", response_model=TicketResponse)
@@ -367,68 +668,39 @@ def update_ticket(
     ticket_id: int,
     data: TicketUpdate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Updates editable fields of a ticket (subject, description, priority, etc.)
-    Does NOT handle status changes — that's PUT /tickets/{id}/status.
-    
-    Access control:
-      Supervisor: can edit any ticket, including reassigning to any agent
-      Agent: can edit tickets they're on, but CANNOT reassign (change assignee_id)
-    
-    Only non-None fields in the request body get updated.
-    This is a "partial update" — send only what you want to change.
-    """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
-
-    # Agents cannot reassign tickets
     if data.assignee_id is not None and current_user.role == UserRole.agent:
-        raise HTTPException(
-            status_code=403,
-            detail="Agents cannot reassign tickets. Only supervisors can do this."
-        )
+        raise HTTPException(status_code=403, detail="Agents cannot reassign tickets")
 
-    # Track if assignee changed (for event logging)
     old_assignee_id = ticket.assignee_id
 
-    # Update only the fields that were actually sent (not None)
-    if data.subject is not None:
-        ticket.subject = data.subject
-    if data.description is not None:
-        ticket.description = data.description
-    if data.requester_name is not None:
-        ticket.requester_name = data.requester_name
+    if data.subject is not None:        ticket.subject = data.subject
+    if data.description is not None:    ticket.description = data.description
+    if data.requester_name is not None: ticket.requester_name = data.requester_name
     if data.priority is not None:
-        old_priority = ticket.priority
         ticket.priority = data.priority
-        # If priority changed, recalculate SLA deadline
-        # (keep the original creation time, just change the duration)
-        sla_hours = SLA_HOURS[data.priority]
-        ticket.response_due_at = ticket.created_at + timedelta(hours=sla_hours)
-    if data.assignee_id is not None:
-        ticket.assignee_id = data.assignee_id
+        ticket.response_due_at = ticket.created_at + timedelta(hours=SLA_HOURS[data.priority])
+    if data.category is not None:       ticket.category = data.category
+    if data.assignee_id is not None:    ticket.assignee_id = data.assignee_id
 
     ticket.updated_at = datetime.utcnow()
 
-    # Log reassignment event if assignee changed
     if data.assignee_id is not None and data.assignee_id != old_assignee_id:
         old_agent = db.query(User).filter(User.id == old_assignee_id).first()
         new_agent = db.query(User).filter(User.id == data.assignee_id).first()
-        event = TicketEvent(
+        db.add(TicketEvent(
             ticket_id=ticket.id,
             event_type=EventType.reassigned,
             old_value=old_agent.name if old_agent else "Unassigned",
             new_value=new_agent.name if new_agent else "Unassigned",
             actor_id=current_user.id,
-        )
-        db.add(event)
+        ))
 
     db.commit()
     db.refresh(ticket)
@@ -436,7 +708,7 @@ def update_ticket(
 
 
 # ─────────────────────────────────────────────
-# PUT /tickets/{ticket_id}/status — Change ticket status
+# PUT /tickets/{ticket_id}/status
 # ─────────────────────────────────────────────
 
 @router.put("/{ticket_id}/status", response_model=TicketResponse)
@@ -444,99 +716,78 @@ def change_ticket_status(
     ticket_id: int,
     data: StatusChangeRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Changes the status of a ticket.
-    
-    This is the most complex endpoint — it:
-    1. Validates the transition is legal (using LEGAL_TRANSITIONS map)
-    2. Handles SLA clock pause/resume logic
-    3. Handles the 7-day reopen window for closed tickets
-    4. Blocks agents from directly closing tickets
-    5. Logs the status change to ticket_events
-    
-    WHY IS THIS SEPARATE FROM PUT /tickets/{id}?
-    Because status changes have complex side effects (SLA, events, validation).
-    Mixing them into the generic update endpoint would be messy and error-prone.
-    Separation of concerns — each endpoint has one clear responsibility.
+    Changes ticket status with full lifecycle validation:
+    1. Legal transition check
+    2. Agent-cannot-close rule
+    3. 7-day reopen window
+    4. SLA clock pause/resume
+    5. Immutable event log
+    6. SLA alert re-fire on reopen
     """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
 
     old_status = ticket.status
     new_status = data.new_status
 
-    # If no change, nothing to do
     if old_status == new_status:
         return ticket_to_response(ticket)
 
-    # ── Rule 1: Check the transition is legally allowed ──
     allowed_next = LEGAL_TRANSITIONS.get(old_status, [])
     if new_status not in allowed_next:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Cannot transition from '{old_status.value}' to '{new_status.value}'. "
-                f"Allowed transitions from '{old_status.value}': "
-                f"{[s.value for s in allowed_next]}"
-            )
+                f"Allowed: {[s.value for s in allowed_next]}"
+            ),
         )
 
-    # ── Rule 2: Agents cannot close tickets directly ──
     if new_status == TicketStatus.closed and current_user.role == UserRole.agent:
-        raise HTTPException(
-            status_code=403,
-            detail="Agents cannot close tickets. Only supervisors can close tickets."
-        )
+        raise HTTPException(status_code=403, detail="Agents cannot close tickets")
 
-    # ── Rule 3: 7-day reopen window ──
     if old_status == TicketStatus.closed:
         if not ticket.closed_at:
             raise HTTPException(status_code=400, detail="Ticket has no closed_at timestamp")
-        days_since_closed = (datetime.utcnow() - ticket.closed_at).days
-        if days_since_closed > 7:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"This ticket was closed {days_since_closed} days ago. "
-                    "Tickets can only be reopened within 7 days of closing."
-                )
-            )
+        if (datetime.utcnow() - ticket.closed_at).days > 7:
+            raise HTTPException(status_code=400, detail="Cannot reopen — 7-day window has passed")
 
-    # ── SLA Clock Logic ──
-    # Entering Pending → record when we started waiting
+    # SLA clock: entering pending → record pause start
     if new_status == TicketStatus.pending:
         ticket.pending_since = datetime.utcnow()
 
-    # Leaving Pending → add the elapsed pause time to total
+    # SLA clock: leaving pending → add elapsed pause time
     if old_status == TicketStatus.pending and ticket.pending_since:
-        paused_duration = (datetime.utcnow() - ticket.pending_since).total_seconds()
-        ticket.total_paused_seconds += paused_duration
-        ticket.pending_since = None  # clear the pause marker
+        ticket.total_paused_seconds += (datetime.utcnow() - ticket.pending_since).total_seconds()
+        ticket.pending_since = None
 
-    # ── Record closed_at when closing ──
     if new_status == TicketStatus.closed:
         ticket.closed_at = datetime.utcnow()
 
-    # ── Apply the status change ──
     ticket.status = new_status
     ticket.updated_at = datetime.utcnow()
 
-    # ── Log to the immutable timeline ──
-    event = TicketEvent(
+    db.add(TicketEvent(
         ticket_id=ticket.id,
         event_type=EventType.status_changed,
         old_value=old_status.value,
         new_value=new_status.value,
         actor_id=current_user.id,
-    )
-    db.add(event)
+    ))
+
+    # SLA alert re-fire: if ticket is reopened, reset any acknowledged alert
+    # so it reappears if the ticket breaches SLA again
+    if new_status == TicketStatus.open and old_status in [TicketStatus.closed, TicketStatus.resolved]:
+        existing_alert = db.query(SlaAlert).filter(SlaAlert.ticket_id == ticket.id).first()
+        if existing_alert and existing_alert.acknowledged:
+            existing_alert.acknowledged = False
+            existing_alert.acknowledged_at = None
 
     db.commit()
     db.refresh(ticket)
@@ -544,41 +795,25 @@ def change_ticket_status(
 
 
 # ─────────────────────────────────────────────
-# GET /tickets/{ticket_id}/replies — Get all replies
+# GET /tickets/{ticket_id}/replies
 # ─────────────────────────────────────────────
 
 @router.get("/{ticket_id}/replies", response_model=List[ReplyResponse])
 def get_replies(
     ticket_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Returns all replies for a ticket in chronological order.
-    
-    Access control: same as getting the ticket itself.
-    Internal notes are included — the frontend decides styling.
-    (In a real system, you'd filter internal notes for customer-facing views,
-    but here all viewers are internal staff.)
-    """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
-
-    replies = (
-        db.query(Reply)
-        .filter(Reply.ticket_id == ticket_id)
-        .order_by(Reply.created_at.asc())
-        .all()
-    )
-    return replies
+    return db.query(Reply).filter(Reply.ticket_id == ticket_id).order_by(Reply.created_at.asc()).all()
 
 
 # ─────────────────────────────────────────────
-# POST /tickets/{ticket_id}/replies — Add a reply
+# POST /tickets/{ticket_id}/replies
 # ─────────────────────────────────────────────
 
 @router.post("/{ticket_id}/replies", response_model=ReplyResponse, status_code=201)
@@ -586,90 +821,48 @@ def add_reply(
     ticket_id: int,
     data: ReplyCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Adds a new reply to a ticket.
-    
-    Two types:
-      is_internal=False → Customer-visible reply (white/normal background in UI)
-      is_internal=True  → Internal note (amber background in UI, staff-only)
-    
-    Both are stored the same way — is_internal flag differentiates them.
-    
-    IMPORTANT: Replies are NEVER deleted or updated. Append-only.
-    This is enforced at the application level (no update/delete endpoints exist).
-    
-    Also logs a 'reply_added' event to the immutable timeline.
-    """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
 
-    # Create the reply
-    reply = Reply(
-        ticket_id=ticket_id,
-        author_id=current_user.id,
-        body=data.body,
-        is_internal=data.is_internal,
-    )
+    reply = Reply(ticket_id=ticket_id, author_id=current_user.id, body=data.body, is_internal=data.is_internal)
     db.add(reply)
-    db.flush()  # get reply.id before committing
+    db.flush()
 
-    # Log the event
-    reply_type = "internal note" if data.is_internal else "customer reply"
-    event = TicketEvent(
+    db.add(TicketEvent(
         ticket_id=ticket_id,
         event_type=EventType.reply_added,
         old_value=None,
-        new_value=reply_type,
+        new_value="internal note" if data.is_internal else "customer reply",
         actor_id=current_user.id,
-    )
-    db.add(event)
+    ))
 
-    # Update ticket's updated_at
     ticket.updated_at = datetime.utcnow()
-
     db.commit()
     db.refresh(reply)
     return reply
 
 
 # ─────────────────────────────────────────────
-# GET /tickets/{ticket_id}/events — Get the timeline
+# GET /tickets/{ticket_id}/events
 # ─────────────────────────────────────────────
 
 @router.get("/{ticket_id}/events", response_model=List[TicketEventResponse])
 def get_events(
     ticket_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Returns the immutable timeline for a ticket — every event ever.
-    
-    READ ONLY. There is no POST/PUT/DELETE for events.
-    The only way events get created is as a side effect of other actions.
-    
-    Returned in chronological order (oldest first).
-    """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
-
-    events = (
-        db.query(TicketEvent)
-        .filter(TicketEvent.ticket_id == ticket_id)
-        .order_by(TicketEvent.created_at.asc())
-        .all()
-    )
-    return events
+    return db.query(TicketEvent).filter(TicketEvent.ticket_id == ticket_id).order_by(TicketEvent.created_at.asc()).all()
 
 
 # ─────────────────────────────────────────────
@@ -680,21 +873,18 @@ def get_events(
 def get_collaborators(
     ticket_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Returns all collaborators on a ticket."""
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
-
     return ticket.collaborators
 
 
 # ─────────────────────────────────────────────
-# POST /tickets/{ticket_id}/collaborators — Add collaborator
+# POST /tickets/{ticket_id}/collaborators
 # ─────────────────────────────────────────────
 
 @router.post("/{ticket_id}/collaborators", response_model=CollaboratorResponse, status_code=201)
@@ -702,64 +892,40 @@ def add_collaborator(
     ticket_id: int,
     data: CollaboratorAdd,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Adds an agent as a collaborator on a ticket.
-    
-    Access control:
-      Supervisor: can add anyone
-      Agent: can add collaborators to tickets they're on (but usually supervisors do this)
-    
-    Prevents:
-      - Adding someone who is already the primary assignee
-      - Adding duplicate collaborators (DB composite PK would reject this anyway,
-        but we give a better error message by checking first)
-      - Adding non-agents (supervisors can't be collaborators)
-    """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
 
-    # The user being added must exist and be an agent
     agent = db.query(User).filter(User.id == data.agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="User not found")
     if agent.role != UserRole.agent:
-        raise HTTPException(status_code=400, detail="Only agents can be added as collaborators")
-
-    # Can't add the primary assignee as a collaborator (redundant)
+        raise HTTPException(status_code=400, detail="Only agents can be collaborators")
     if ticket.assignee_id == data.agent_id:
-        raise HTTPException(
-            status_code=400,
-            detail="This agent is already the primary assignee of this ticket"
-        )
+        raise HTTPException(status_code=400, detail="This agent is already the primary assignee")
 
-    # Check if already a collaborator
     existing = db.query(Collaborator).filter(
         Collaborator.ticket_id == ticket_id,
-        Collaborator.agent_id == data.agent_id
+        Collaborator.agent_id == data.agent_id,
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail="This agent is already a collaborator")
 
-    # Add collaborator
     collab = Collaborator(ticket_id=ticket_id, agent_id=data.agent_id)
     db.add(collab)
     db.flush()
 
-    # Log the event
-    event = TicketEvent(
+    db.add(TicketEvent(
         ticket_id=ticket_id,
         event_type=EventType.collaborator_added,
         old_value=None,
         new_value=agent.name,
         actor_id=current_user.id,
-    )
-    db.add(event)
+    ))
 
     ticket.updated_at = datetime.utcnow()
     db.commit()
@@ -776,67 +942,31 @@ def remove_collaborator(
     ticket_id: int,
     agent_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Removes a collaborator from a ticket.
-    Status 204 = success with no response body (standard for DELETE).
-    """
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
     if not can_user_act_on_ticket(ticket, current_user, db):
         raise HTTPException(status_code=403, detail="You don't have access to this ticket")
 
     collab = db.query(Collaborator).filter(
         Collaborator.ticket_id == ticket_id,
-        Collaborator.agent_id == agent_id
+        Collaborator.agent_id == agent_id,
     ).first()
-
     if not collab:
         raise HTTPException(status_code=404, detail="Collaborator not found")
 
     agent = db.query(User).filter(User.id == agent_id).first()
-
     db.delete(collab)
 
-    # Log removal event
-    event = TicketEvent(
+    db.add(TicketEvent(
         ticket_id=ticket_id,
         event_type=EventType.collaborator_removed,
         old_value=agent.name if agent else str(agent_id),
         new_value=None,
         actor_id=current_user.id,
-    )
-    db.add(event)
+    ))
 
     ticket.updated_at = datetime.utcnow()
     db.commit()
-
-
-# ─────────────────────────────────────────────
-# GET /tickets/agents — Get list of agents (for dropdowns)
-# ─────────────────────────────────────────────
-
-@router.get("/meta/agents", response_model=List[UserBriefResponse])
-def get_agents(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Returns all active agents.
-    
-    Used by the frontend to populate:
-      - The 'Assignee' dropdown when creating/editing a ticket
-      - The 'Add collaborator' dropdown
-    
-    Why /meta/agents and not /users/agents?
-    Because it's ticket-context data — who can be assigned to tickets.
-    Keeping it in the tickets router avoids needing a separate users router for now.
-    """
-    agents = db.query(User).filter(
-        User.role == UserRole.agent,
-        User.is_active == True
-    ).all()
-    return agents

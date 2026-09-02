@@ -76,11 +76,12 @@
     useEffect(() => {
         // Reset offset whenever we get a fresh initialSeconds from the parent
         setOffset(0);
+        // Set up the interval to update the offset every second
         const interval = setInterval(() => {
         setOffset(prev => prev + 1);   // increment offset, subtract from initialSeconds
         }, 1000);
         return () => clearInterval(interval);
-    }, [initialSeconds]);
+    }, [initialSeconds]);  // eslint-disable-line react-hooks/exhaustive-deps
 
     if (initialSeconds === null || initialSeconds === undefined) {
         return <span className="text-gray-400 text-sm">No SLA set</span>;

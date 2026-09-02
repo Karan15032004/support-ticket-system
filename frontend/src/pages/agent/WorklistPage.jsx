@@ -4,7 +4,7 @@ import AgentNav from '../../components/AgentNav';
 import CreateTicketModal from '../../components/CreateTicketModal';
 import { getTickets } from '../../api/tickets';
 
-// ─── Constants (outside component — never recreated) ────────────────────────
+// ─── Constants ──────────────────────────────────────────────────────────────
 
 const PRIORITY_STYLES = {
   critical: 'bg-red-100 text-red-700 border border-red-200',
@@ -21,8 +21,23 @@ const STATUS_STYLES = {
   closed:   'bg-gray-100 text-gray-600',
 };
 
+const CATEGORY_OPTIONS = [
+  { value: 'billing',         label: 'Billing' },
+  { value: 'technical',       label: 'Technical' },
+  { value: 'how_to',          label: 'How To' },
+  { value: 'account',         label: 'Account' },
+  { value: 'feature_request', label: 'Feature Request' },
+  { value: 'other',           label: 'Other' },
+];
+
+const SORT_OPTIONS = [
+  { value: 'updated_at', label: 'Last Updated' },
+  { value: 'created_at', label: 'Created Date' },
+  { value: 'priority',   label: 'Priority' },
+];
+
 function formatLabel(str) {
-  return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return str ? str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
 }
 
 function timeAgo(dateStr) {
@@ -42,8 +57,8 @@ function SLABadge({ seconds }) {
   if (seconds < 0)
     return <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded">Breached</span>;
 
-  const hrs   = Math.floor(seconds / 3600);
-  const mins  = Math.floor((seconds % 3600) / 60);
+  const hrs  = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
   const color = seconds < 3600
     ? 'text-red-600 bg-red-50'
     : seconds < 14400
@@ -68,13 +83,26 @@ export default function WorklistPage() {
   const [error,           setError]           = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Separate state vars — same pattern as the fixed TicketListPage
-  const [status,   setStatus]   = useState('');
-  const [priority, setPriority] = useState('');
-  const [page,     setPage]     = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [search,      setSearch]      = useState('');
+  const [status,      setStatus]      = useState('');
+  const [priority,    setPriority]    = useState('');
+  const [category,    setCategory]    = useState('');
+  const [sort,        setSort]        = useState('updated_at');
+  const [order,       setOrder]       = useState('desc');
+  const [page,        setPage]        = useState(1);
   const PAGE_SIZE = 20;
 
-  // useEffect reads state vars directly — no function dependency issues
+  // 400ms debounce on search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Fetch on any filter/sort/page change
   useEffect(() => {
     let cancelled = false;
 
@@ -82,9 +110,11 @@ export default function WorklistPage() {
       setLoading(true);
       setError('');
       try {
-        const params = { page, page_size: PAGE_SIZE };
+        const params = { page, page_size: PAGE_SIZE, sort, order };
+        if (search)   params.search   = search;
         if (status)   params.status   = status;
         if (priority) params.priority = priority;
+        if (category) params.category = category;
 
         const data = await getTickets(params);
         if (!cancelled) {
@@ -100,18 +130,32 @@ export default function WorklistPage() {
 
     load();
     return () => { cancelled = true; };
-  }, [status, priority, page]);
+  }, [search, status, priority, category, sort, order, page]);
 
   function handleCreated() {
     setPage(1);
-    setStatus('');
-    setPriority('');
+    setSearchInput(''); setSearch('');
+    setStatus(''); setPriority(''); setCategory('');
   }
 
-  function handleStatusFilter(val)   { setStatus(val);   setPage(1); }
-  function handlePriorityFilter(val) { setPriority(val); setPage(1); }
-  function handleClearFilters()      { setStatus(''); setPriority(''); setPage(1); }
+  function handleClearFilters() {
+    setSearchInput(''); setSearch('');
+    setStatus(''); setPriority(''); setCategory('');
+    setSort('updated_at'); setOrder('desc');
+    setPage(1);
+  }
 
+  function toggleSort(field) {
+    if (sort === field) {
+      setOrder(prev => prev === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSort(field);
+      setOrder('desc');
+    }
+    setPage(1);
+  }
+
+  const hasFilters = search || status || priority || category;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const startItem  = (page - 1) * PAGE_SIZE + 1;
   const endItem    = Math.min(page * PAGE_SIZE, totalCount);
@@ -127,9 +171,7 @@ export default function WorklistPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">My Tickets</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              {loading
-                ? 'Loading…'
-                : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} assigned to you`}
+              {loading ? 'Loading…' : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} assigned to you`}
             </p>
           </div>
           <button
@@ -141,38 +183,67 @@ export default function WorklistPage() {
           </button>
         </div>
 
+        {/* Search */}
+        <div className="mb-4">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Search your tickets by subject or description…"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          />
+        </div>
+
         {/* Filters */}
-        <div className="flex items-center gap-3 mb-4">
-          <select
-            value={status}
-            onChange={e => handleStatusFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
             <option value="">All Statuses</option>
             {['new', 'open', 'pending', 'resolved', 'closed'].map(s => (
               <option key={s} value={s}>{formatLabel(s)}</option>
             ))}
           </select>
 
-          <select
-            value={priority}
-            onChange={e => handlePriorityFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
+          <select value={priority} onChange={e => { setPriority(e.target.value); setPage(1); }}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
             <option value="">All Priorities</option>
             {['critical', 'high', 'medium', 'low'].map(p => (
               <option key={p} value={p}>{formatLabel(p)}</option>
             ))}
           </select>
 
-          {(status || priority) && (
-            <button
-              onClick={handleClearFilters}
-              className="text-sm text-emerald-600 hover:text-emerald-800 underline"
-            >
-              Clear filters
+          <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="">All Categories</option>
+            {CATEGORY_OPTIONS.map(c => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+
+          {hasFilters && (
+            <button onClick={handleClearFilters} className="text-sm text-emerald-600 hover:text-emerald-800 underline">
+              Clear all filters
             </button>
           )}
+        </div>
+
+        {/* Sort buttons */}
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-gray-500 font-medium">Sort by:</span>
+          {SORT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => toggleSort(opt.value)}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                sort === opt.value
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-medium'
+                  : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              {opt.label}
+              {sort === opt.value && <span className="ml-1">{order === 'desc' ? '↓' : '↑'}</span>}
+            </button>
+          ))}
         </div>
 
         {error && (
@@ -192,10 +263,10 @@ export default function WorklistPage() {
               <div className="text-center">
                 <div className="text-4xl mb-3">🎉</div>
                 <p className="text-sm font-medium text-gray-600">
-                  {status || priority ? 'No tickets match these filters' : 'No tickets assigned to you'}
+                  {hasFilters ? 'No tickets match these filters' : 'No tickets assigned to you'}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  {status || priority ? 'Try clearing the filters' : 'Check back later or ask your supervisor'}
+                  {hasFilters ? 'Try clearing the filters' : 'Check back later or ask your supervisor'}
                 </p>
               </div>
             </div>
@@ -255,19 +326,13 @@ export default function WorklistPage() {
               Showing {startItem}–{endItem} of {totalCount} tickets
             </p>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage(p => p - 1)}
-                disabled={page <= 1}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
+              <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 ← Previous
               </button>
               <span className="text-sm text-gray-600 px-2">Page {page} of {totalPages}</span>
-              <button
-                onClick={() => setPage(p => p + 1)}
-                disabled={page >= totalPages}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
+              <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 Next →
               </button>
             </div>
