@@ -188,17 +188,17 @@ export default function AlertsPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-shell">
       {isSupervisor ? <SupervisorNav /> : <AgentNav />}
 
       <main className="max-w-3xl mx-auto px-4 py-8">
 
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="page-title">
             {isSupervisor ? 'SLA Alerts' : 'My SLA Alerts'}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="page-subtitle mt-1">
             {isSupervisor
               ? 'All tickets that are breaching or about to breach their SLA target.'
               : 'Your tickets that need attention. Acknowledge to dismiss an alert.'}

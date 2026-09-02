@@ -280,29 +280,29 @@ export default function TicketListPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-shell">
       <SupervisorNav />
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="app-main max-w-7xl mx-auto px-4 py-8">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">All Tickets</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h1 className="page-title">All Tickets</h1>
+            <p className="page-subtitle mt-1">
               {loading ? 'Loading…' : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} total`}
             </p>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+              className="btn-secondary"
             >
               📥 Export CSV
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              className="btn-primary"
             >
               <span className="text-lg leading-none">+</span>
               New Ticket
@@ -317,14 +317,14 @@ export default function TicketListPage() {
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             placeholder="Search tickets by subject or description…"
-            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="workspace-input"
           />
         </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            className="filter-control px-3 py-2 text-sm">
             <option value="">All Statuses</option>
             {['new', 'open', 'pending', 'resolved', 'closed'].map(s => (
               <option key={s} value={s}>{formatLabel(s)}</option>
@@ -332,7 +332,7 @@ export default function TicketListPage() {
           </select>
 
           <select value={priority} onChange={e => { setPriority(e.target.value); setPage(1); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            className="filter-control px-3 py-2 text-sm">
             <option value="">All Priorities</option>
             {['critical', 'high', 'medium', 'low'].map(p => (
               <option key={p} value={p}>{formatLabel(p)}</option>
@@ -340,7 +340,7 @@ export default function TicketListPage() {
           </select>
 
           <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            className="filter-control px-3 py-2 text-sm">
             <option value="">All Categories</option>
             {CATEGORY_OPTIONS.map(c => (
               <option key={c.value} value={c.value}>{c.label}</option>
@@ -348,7 +348,7 @@ export default function TicketListPage() {
           </select>
 
           <select value={assigneeId} onChange={e => { setAssigneeId(e.target.value); setPage(1); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            className="filter-control px-3 py-2 text-sm">
             <option value="">All Assignees</option>
             {agents.map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
@@ -356,7 +356,7 @@ export default function TicketListPage() {
           </select>
 
           {hasFilters && (
-            <button onClick={handleClearFilters} className="text-sm text-blue-600 hover:text-blue-800 underline">
+            <button onClick={handleClearFilters} className="text-sm text-[#1764ed] hover:text-[#1253c7] underline">
               Clear all filters
             </button>
           )}
@@ -364,15 +364,15 @@ export default function TicketListPage() {
 
         {/* Sort buttons */}
         <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs text-gray-500 font-medium">Sort by:</span>
+          <span className="text-xs text-[#58708f] font-semibold">Sort by:</span>
           {SORT_OPTIONS.map(opt => (
             <button
               key={opt.value}
               onClick={() => toggleSort(opt.value)}
               className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
                 sort === opt.value
-                  ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
-                  : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                  ? 'bg-[#eaf2ff] border-[#8db5ff] text-[#1764ed] font-medium'
+                  : 'border-[#dce5f3] text-[#64748b] hover:bg-[#f3f7fd] hover:text-[#18345f]'
               }`}
             >
               {opt.label}
@@ -383,13 +383,13 @@ export default function TicketListPage() {
 
         {/* Bulk action bar — shown only when tickets are selected */}
         {selectedIds.size > 0 && (
-          <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <span className="text-sm font-medium text-blue-800">
+          <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-[#eaf2ff] border border-[#c9dcff] rounded-xl">
+            <span className="text-sm font-semibold text-[#174ea6]">
               {selectedIds.size} ticket{selectedIds.size > 1 ? 's' : ''} selected
             </span>
 
             <select value={bulkAction} onChange={e => setBulkAction(e.target.value)}
-              className="border border-blue-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              className="filter-control px-3 py-1.5 text-sm">
               <option value="">Choose action…</option>
               <option value="assign">Reassign</option>
               <option value="close">Close</option>
@@ -397,7 +397,7 @@ export default function TicketListPage() {
 
             {bulkAction === 'assign' && (
               <select value={bulkAssignAgent} onChange={e => setBulkAssignAgent(e.target.value)}
-                className="border border-blue-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="filter-control px-3 py-1.5 text-sm">
                 <option value="">Select agent…</option>
                 {agents.map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
@@ -408,14 +408,14 @@ export default function TicketListPage() {
             <button
               onClick={executeBulkAction}
               disabled={bulkLoading || !bulkAction || (bulkAction === 'assign' && !bulkAssignAgent)}
-              className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="btn-primary px-4 py-1.5"
             >
               {bulkLoading ? 'Processing…' : 'Apply'}
             </button>
 
             <button
               onClick={() => { setSelectedIds(new Set()); setBulkAction(''); setBulkAssignAgent(''); }}
-              className="text-sm text-blue-600 hover:text-blue-800 underline ml-auto"
+              className="text-sm text-[#1764ed] hover:text-[#1253c7] underline ml-auto"
             >
               Deselect all
             </button>
@@ -430,9 +430,9 @@ export default function TicketListPage() {
         )}
 
         {/* Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="workspace-card overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center py-20 text-gray-400">
+            <div className="flex items-center justify-center py-20 text-[#94a3b8]">
               <div className="text-center">
                 <div className="text-4xl mb-3">⟳</div>
                 <p className="text-sm">Loading tickets…</p>
@@ -442,8 +442,8 @@ export default function TicketListPage() {
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
                 <div className="text-4xl mb-3">📭</div>
-                <p className="text-sm font-medium text-gray-600">No tickets found</p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-sm font-semibold text-[#475d7a]">No tickets found</p>
+                <p className="text-xs text-[#94a3b8] mt-1">
                   {hasFilters ? 'Try clearing the filters' : 'Create the first ticket to get started'}
                 </p>
               </div>
@@ -451,30 +451,30 @@ export default function TicketListPage() {
           ) : (
             <table className="w-full">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
+                <tr className="bg-[#f3f7fd] border-b border-[#dce5f3]">
                   <th className="text-left px-4 py-3 w-10">
                     {/* Select-all checkbox */}
                     <input
                       type="checkbox"
                       checked={selectedIds.size === tickets.length && tickets.length > 0}
                       onChange={toggleAll}
-                      className="rounded border-gray-300 accent-blue-600"
+                      className="rounded border-gray-300 accent-[#2878ff]"
                     />
                   </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assignee</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">SLA</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Updated</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Ticket</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Priority</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Assignee</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">SLA</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Updated</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#edf1f7]">
                 {tickets.map(ticket => (
                   <tr
                     key={ticket.id}
-                    className={`hover:bg-blue-50 cursor-pointer transition-colors group ${
-                      selectedIds.has(ticket.id) ? 'bg-blue-50/50' : ''
+                    className={`hover:bg-[#f3f7ff] cursor-pointer transition-colors group ${
+                      selectedIds.has(ticket.id) ? 'bg-[#eaf2ff]/70' : ''
                     }`}
                   >
                     {/* Checkbox cell — stopPropagation prevents row click nav */}
@@ -483,14 +483,14 @@ export default function TicketListPage() {
                         type="checkbox"
                         checked={selectedIds.has(ticket.id)}
                         onChange={() => toggleTicket(ticket.id)}
-                        className="rounded border-gray-300 accent-blue-600"
+                        className="rounded border-gray-300 accent-[#2878ff]"
                       />
                     </td>
                     <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
-                      <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700 transition-colors line-clamp-1">
+                      <p className="text-sm font-semibold text-[#0b1b3a] group-hover:text-[#1764ed] transition-colors line-clamp-1">
                         #{ticket.id} — {ticket.subject}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="text-xs text-[#64748b] mt-0.5">
                         {ticket.requester_name} · {formatLabel(ticket.category)}
                       </p>
                     </td>
@@ -504,13 +504,13 @@ export default function TicketListPage() {
                         {formatLabel(ticket.priority)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700" onClick={() => navigate(`/tickets/${ticket.id}`)}>
-                      {ticket.assignee?.name ?? <span className="text-gray-400 italic">Unassigned</span>}
+                    <td className="px-4 py-3 text-sm text-[#405572]" onClick={() => navigate(`/tickets/${ticket.id}`)}>
+                      {ticket.assignee?.name ?? <span className="text-[#94a3b8] italic">Unassigned</span>}
                     </td>
                     <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       <SLABadge seconds={ticket.sla_remaining_seconds} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500" onClick={() => navigate(`/tickets/${ticket.id}`)}>
+                    <td className="px-4 py-3 text-xs text-[#64748b]" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       {timeAgo(ticket.updated_at)}
                     </td>
                   </tr>
@@ -523,17 +523,17 @@ export default function TicketListPage() {
         {/* Pagination */}
         {!loading && tickets.length > 0 && (
           <div className="flex items-center justify-between mt-4">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-[#64748b]">
               Showing {startItem}–{endItem} of {totalCount} tickets
             </p>
             <div className="flex items-center gap-2">
               <button onClick={() => setPage(p => p - 1)} disabled={page <= 1}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                className="btn-secondary px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
                 ← Previous
               </button>
-              <span className="text-sm text-gray-600 px-2">Page {page} of {totalPages}</span>
+              <span className="text-sm text-[#405572] px-2">Page {page} of {totalPages}</span>
               <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                className="btn-secondary px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
                 Next →
               </button>
             </div>

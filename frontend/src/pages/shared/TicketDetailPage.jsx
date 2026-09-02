@@ -241,9 +241,9 @@
 
     if (loading) {
         return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="app-shell">
             {isSupervisor ? <SupervisorNav /> : <AgentNav />}
-            <div className="flex items-center justify-center py-32 text-gray-400">
+            <div className="flex items-center justify-center py-32 text-[#7b8da8]">
             <p>Loading ticket…</p>
             </div>
         </div>
@@ -252,11 +252,11 @@
 
     if (error) {
         return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="app-shell">
             {isSupervisor ? <SupervisorNav /> : <AgentNav />}
             <div className="max-w-4xl mx-auto px-4 py-16 text-center">
             <p className="text-red-600 font-medium">{error}</p>
-            <button onClick={() => navigate(-1)} className="mt-4 text-sm text-blue-600 underline">
+            <button onClick={() => navigate(-1)} className="mt-4 text-sm text-[#2878ff] hover:text-[#1764ed] underline">
                 Go back
             </button>
             </div>
@@ -267,17 +267,17 @@
     // ── Full render ──────────────────────────────────────────────────────────────
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="app-shell">
         {isSupervisor ? <SupervisorNav /> : <AgentNav />}
 
-        <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+        <main className="app-main max-w-4xl mx-auto px-4 py-8 space-y-6">
 
             {/* 1. HEADER */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="workspace-card p-6">
             <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                <p className="text-xs text-gray-400 mb-1">Ticket #{ticket.id}</p>
-                <h1 className="text-xl font-bold text-gray-900">{ticket.subject}</h1>
+                <p className="text-xs text-[#7b8da8] mb-1">Ticket #{ticket.id}</p>
+                <h1 className="text-xl font-bold text-[#081a3a]">{ticket.subject}</h1>
                 </div>
                 <span className={`flex-shrink-0 px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[ticket.status]}`}>
                 {formatLabel(ticket.status)}
@@ -286,7 +286,7 @@
 
             {validNextStatuses.length > 0 && (
                 <div className="mt-4">
-                <p className="text-xs text-gray-500 mb-2">Move to:</p>
+                <p className="text-xs text-[#58708f] mb-2">Move to:</p>
                 <div className="flex flex-wrap gap-2">
                     {validNextStatuses.map(s => {
                     if (s === 'closed' && !isSupervisor) return null;
@@ -303,59 +303,59 @@
                     })}
                 </div>
                 {statusError && (
-                    <p className="text-red-600 text-sm mt-2 bg-red-50 px-3 py-2 rounded-lg">{statusError}</p>
+                    <p className="text-red-600 text-sm mt-2 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{statusError}</p>
                 )}
                 </div>
             )}
             </div>
 
             {/* 2. METADATA */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="workspace-card p-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
-                <p className="text-xs text-gray-500 mb-1">Priority</p>
+                <p className="text-xs text-[#58708f] mb-1">Priority</p>
                 <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_STYLES[ticket.priority]}`}>
                     {formatLabel(ticket.priority)}
                 </span>
                 </div>
                 <div>
-                <p className="text-xs text-gray-500 mb-1">Category</p>
-                <p className="text-sm text-gray-800 font-medium">{formatLabel(ticket.category)}</p>
+                <p className="text-xs text-[#58708f] mb-1">Category</p>
+                <p className="text-sm text-[#405572] font-medium">{formatLabel(ticket.category)}</p>
                 </div>
                 <div>
-                <p className="text-xs text-gray-500 mb-1">Requester</p>
-                <p className="text-sm text-gray-800 font-medium">{ticket.requester_name}</p>
+                <p className="text-xs text-[#58708f] mb-1">Requester</p>
+                <p className="text-sm text-[#405572] font-medium">{ticket.requester_name}</p>
                 </div>
                 <div>
-                <p className="text-xs text-gray-500 mb-1">Assignee</p>
-                <p className="text-sm text-gray-800 font-medium">
-                    {ticket.assignee?.name ?? <span className="text-gray-400 italic">Unassigned</span>}
+                <p className="text-xs text-[#58708f] mb-1">Assignee</p>
+                <p className="text-sm text-[#405572] font-medium">
+                    {ticket.assignee?.name ?? <span className="text-[#94a3b8] italic">Unassigned</span>}
                 </p>
                 </div>
             </div>
-            <div className="mt-3 pt-3 border-t border-gray-100 flex gap-6 text-xs text-gray-400">
+            <div className="mt-3 pt-3 border-t border-[#e5ebf4] flex gap-6 text-xs text-[#7b8da8]">
                 <span>Created {formatDate(ticket.created_at)}</span>
                 <span>Updated {formatDate(ticket.updated_at)}</span>
             </div>
             </div>
 
             {/* 3. DESCRIPTION */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Description</h2>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
+            <div className="workspace-card p-6">
+            <h2 className="text-sm font-bold text-[#18345f] mb-3">Description</h2>
+            <p className="text-sm text-[#405572] whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
             </div>
 
             {/* 4 + 5. CONVERSATION + REPLY COMPOSER */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">
+            <div className="workspace-card p-6">
+            <h2 className="text-sm font-bold text-[#18345f] mb-4">
                 Conversation
-                <span className="ml-2 text-gray-400 font-normal">
+                <span className="ml-2 text-[#7b8da8] font-normal">
                 ({replies.length} {replies.length === 1 ? 'message' : 'messages'})
                 </span>
             </h2>
 
             {replies.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">No replies yet. Be the first to respond.</p>
+                <p className="text-sm text-[#7b8da8] italic">No replies yet. Be the first to respond.</p>
             ) : (
                 <div className="space-y-4">
                 {replies.map(reply => (
@@ -369,26 +369,26 @@
                     >
                     <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${reply.is_internal ? 'bg-amber-500' : 'bg-blue-500'}`}>
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${reply.is_internal ? 'bg-amber-500' : 'bg-[#2878ff]'}`}>
                             {reply.author.name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-sm font-medium text-gray-800">{reply.author.name}</span>
+                        <span className="text-sm font-semibold text-[#18345f]">{reply.author.name}</span>
                         {reply.is_internal && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 font-medium">
                             Internal note
                             </span>
                         )}
                         </div>
-                        <span className="text-xs text-gray-400">{formatDate(reply.created_at)}</span>
+                        <span className="text-xs text-[#7b8da8]">{formatDate(reply.created_at)}</span>
                     </div>
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{reply.body}</p>
+                    <p className="text-sm text-[#405572] whitespace-pre-wrap">{reply.body}</p>
                     </div>
                 ))}
                 </div>
             )}
 
             {/* Reply composer */}
-            <div className="mt-6 pt-4 border-t border-gray-100">
+            <div className="mt-6 pt-4 border-t border-[#e5ebf4]">
                 <div className="flex items-center gap-4 mb-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -396,9 +396,9 @@
                     name="replyType"
                     checked={!isInternal}
                     onChange={() => setIsInternal(false)}
-                    className="accent-blue-600"
+                    className="accent-[#2878ff]"
                     />
-                    <span className="text-sm text-gray-700">Customer reply</span>
+                    <span className="text-sm text-[#405572]">Customer reply</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -408,7 +408,7 @@
                     onChange={() => setIsInternal(true)}
                     className="accent-amber-500"
                     />
-                    <span className="text-sm text-gray-700">Internal note</span>
+                    <span className="text-sm text-[#405572]">Internal note</span>
                 </label>
                 </div>
 
@@ -420,7 +420,7 @@
                 className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 resize-none transition-colors ${
                     isInternal
                     ? 'bg-amber-50 border-amber-300 focus:ring-amber-400'
-                    : 'bg-white border-gray-300 focus:ring-blue-500'
+                    : 'bg-white border-[#cbd7e8] focus:ring-[#2878ff]'
                 }`}
                 />
 
@@ -431,7 +431,7 @@
                     onClick={handleSendReply}
                     disabled={sendingReply || !replyBody.trim()}
                     className={`px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isInternal ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'
+                    isInternal ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#2878ff] hover:bg-[#1764ed]'
                     }`}
                 >
                     {sendingReply ? 'Sending…' : isInternal ? 'Add Note' : 'Send Reply'}
@@ -442,8 +442,8 @@
 
             {/* 6. COLLABORATORS + SLA */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                <h2 className="text-sm font-semibold text-gray-700 mb-3">Collaborators</h2>
+            <div className="workspace-card p-5">
+                <h2 className="text-sm font-bold text-[#18345f] mb-3">Collaborators</h2>
 
                 {collaborators.length === 0 ? (
                 <p className="text-sm text-gray-400 italic mb-3">No collaborators yet.</p>
@@ -455,7 +455,7 @@
                         <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center text-xs font-bold text-white">
                             {c.agent.name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-sm text-gray-700">{c.agent.name}</span>
+                        <span className="text-sm text-[#405572]">{c.agent.name}</span>
                         </div>
                         {isSupervisor && (
                         <button
@@ -475,7 +475,7 @@
                     <select
                     value={selectedAgentId}
                     onChange={e => setSelectedAgentId(e.target.value)}
-                    className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="workspace-select flex-1 px-2 py-1.5 text-sm"
                     >
                     <option value="">Add agent…</option>
                     {availableAgents.map(a => (
@@ -485,7 +485,7 @@
                     <button
                     onClick={handleAddCollaborator}
                     disabled={!selectedAgentId || addingCollab}
-                    className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    className="btn-primary px-3 py-1.5 disabled:opacity-50"
                     >
                     Add
                     </button>
@@ -493,13 +493,13 @@
                 )}
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                <h2 className="text-sm font-semibold text-gray-700 mb-3">SLA Status</h2>
+            <div className="workspace-card p-5">
+                <h2 className="text-sm font-bold text-[#18345f] mb-3">SLA Status</h2>
                 <SLACountdown initialSeconds={ticket.sla_remaining_seconds} />
                 {ticket.response_due_at && (
-                <p className="text-xs text-gray-400 mt-2">Due: {formatDate(ticket.response_due_at)}</p>
+                <p className="text-xs text-[#7b8da8] mt-2">Due: {formatDate(ticket.response_due_at)}</p>
                 )}
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-[#7b8da8] mt-1">
                 Priority: {formatLabel(ticket.priority)} (
                 {{ critical: '1 hour', high: '4 hours', medium: '8 hours', low: '24 hours' }[ticket.priority]}
                 {' '}SLA)
@@ -508,40 +508,40 @@
             </div>
 
             {/* 7. TIMELINE */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">
+            <div className="workspace-card p-6">
+            <h2 className="text-sm font-bold text-[#18345f] mb-4">
                 Ticket Timeline
-                <span className="ml-2 text-gray-400 font-normal text-xs">(read-only — cannot be edited)</span>
+                <span className="ml-2 text-[#7b8da8] font-normal text-xs">(read-only — cannot be edited)</span>
             </h2>
 
             {events.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">No events recorded yet.</p>
+                <p className="text-sm text-[#7b8da8] italic">No events recorded yet.</p>
             ) : (
-                <ol className="relative border-l-2 border-gray-200">
+                <ol className="relative border-l-2 border-[#cbd8ea]">
                 {/* FIX: removed unused `idx` from .map() */}
                 {events.map(event => (
                     <li key={event.id} className="ml-4 pb-5">
-                    <div className="absolute -left-2.5 mt-0.5 w-4 h-4 rounded-full bg-white border-2 border-gray-300 flex items-center justify-center">
-                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                    <div className="absolute -left-2.5 mt-0.5 w-4 h-4 rounded-full bg-white border-2 border-[#2878ff] flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#2878ff]" />
                     </div>
                     <div className="flex items-start justify-between">
                         <div>
-                        <p className="text-sm font-medium text-gray-800">
+                        <p className="text-sm font-semibold text-[#18345f]">
                             {EVENT_LABELS[event.event_type] || formatLabel(event.event_type)}
                         </p>
                         {event.old_value && event.new_value && (
-                            <p className="text-xs text-gray-500 mt-0.5">
+                            <p className="text-xs text-[#58708f] mt-0.5">
                             <span className="line-through text-gray-400">{formatLabel(event.old_value)}</span>
                             {' → '}
-                            <span className="font-medium text-gray-600">{formatLabel(event.new_value)}</span>
+                            <span className="font-medium text-[#405572]">{formatLabel(event.new_value)}</span>
                             </p>
                         )}
                         {!event.old_value && event.new_value && (
-                            <p className="text-xs text-gray-500 mt-0.5">{event.new_value}</p>
+                            <p className="text-xs text-[#58708f] mt-0.5">{event.new_value}</p>
                         )}
-                        <p className="text-xs text-gray-400 mt-0.5">by {event.actor.name}</p>
+                        <p className="text-xs text-[#7b8da8] mt-0.5">by {event.actor.name}</p>
                         </div>
-                        <span className="text-xs text-gray-400 ml-4 whitespace-nowrap">
+                        <span className="text-xs text-[#7b8da8] ml-4 whitespace-nowrap">
                         {formatDate(event.created_at)}
                         </span>
                     </div>

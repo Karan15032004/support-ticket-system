@@ -58,55 +58,68 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
     }
   }, [isOpen]);
 
-
   const handleChange = (e) => {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async () => {
-  if (!form.subject.trim()) return setError('Subject is required');
-  if (!form.description.trim()) return setError('Description is required');
-  if (!form.requester_name.trim()) return setError('Requester name is required');
+    if (!form.subject.trim()) return setError('Subject is required');
+    if (!form.description.trim()) return setError('Description is required');
+    if (!form.requester_name.trim()) return setError('Requester name is required');
 
-  setLoading(true);
-  setError('');
-
-  try {
-    const payload = {
-      ...form,
-      assignee_id: form.assignee_id ? parseInt(form.assignee_id) : null,
-    };
-    await createTicket(payload);
-    onCreated();
-    // Reset form here instead of in useEffect
-    setForm({ subject: '', description: '', requester_name: '', priority: 'medium', category: 'technical', assignee_id: '' });
+    setLoading(true);
     setError('');
-    onClose();
-  } catch (err) {
-    setError(err.response?.data?.detail || 'Failed to create ticket. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-};
+
+    try {
+      const payload = {
+        ...form,
+        assignee_id: form.assignee_id ? parseInt(form.assignee_id) : null,
+      };
+      await createTicket(payload);
+      onCreated();
+
+      // Reset form here instead of in useEffect
+      setForm({
+        subject: '',
+        description: '',
+        requester_name: '',
+        priority: 'medium',
+        category: 'technical',
+        assignee_id: '',
+      });
+      setError('');
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to create ticket. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Don't render anything if modal is not open
   if (!isOpen) return null;
 
   return (
-    // Overlay: dark semi-transparent background behind the modal
+    // Overlay: dark navy semi-transparent background with a subtle blur
     // Clicking the overlay closes the modal (good UX)
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 bg-[#061633]/65 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       {/* Modal box */}
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-[#dce5f3]">
 
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <h2 className="text-xl font-semibold text-gray-900">New Support Ticket</h2>
+        <div className="flex items-center justify-between p-6 border-b border-[#e5ebf4]">
+          <h2 className="text-xl font-bold text-[#0b1b3a]">
+            New Support Ticket
+          </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors text-2xl leading-none"
+            className="text-[#94a3b8] hover:text-[#18345f] transition-colors text-2xl leading-none"
+            aria-label="Close modal"
           >
             ×
           </button>
@@ -124,7 +137,7 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
 
           {/* Subject */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[#405572] mb-1">
               Subject <span className="text-red-500">*</span>
             </label>
             <input
@@ -132,13 +145,13 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
               value={form.subject}
               onChange={handleChange}
               placeholder="Brief description of the issue"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="workspace-input"
             />
           </div>
 
           {/* Requester Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[#405572] mb-1">
               Requester Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -146,36 +159,44 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
               value={form.requester_name}
               onChange={handleChange}
               placeholder="Customer's name"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="workspace-input"
             />
           </div>
 
           {/* Priority + Category side by side */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+              <label className="block text-sm font-medium text-[#405572] mb-1">
+                Priority
+              </label>
               <select
                 name="priority"
                 value={form.priority}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="workspace-select"
               >
                 {PRIORITIES.map(p => (
                   <option key={p} value={p}>{formatLabel(p)}</option>
                 ))}
               </select>
+
               {/* Live preview of the priority badge */}
-              <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_COLORS[form.priority]}`}>
+              <span
+                className={`inline-block mt-2 px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_COLORS[form.priority]}`}
+              >
                 {formatLabel(form.priority)}
               </span>
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <label className="block text-sm font-medium text-[#405572] mb-1">
+                Category
+              </label>
               <select
                 name="category"
                 value={form.category}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="workspace-select"
               >
                 {CATEGORIES.map(c => (
                   <option key={c} value={c}>{formatLabel(c)}</option>
@@ -186,14 +207,14 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
 
           {/* Assignee dropdown */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Assign To <span className="text-gray-400 font-normal">(optional)</span>
+            <label className="block text-sm font-medium text-[#405572] mb-1">
+              Assign To <span className="text-[#94a3b8] font-normal">(optional)</span>
             </label>
             <select
               name="assignee_id"
               value={form.assignee_id}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="workspace-select"
             >
               <option value="">Unassigned</option>
               {agents.map(agent => (
@@ -204,7 +225,7 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[#405572] mb-1">
               Description <span className="text-red-500">*</span>
             </label>
             <textarea
@@ -213,23 +234,23 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
               onChange={handleChange}
               placeholder="Detailed description of the issue..."
               rows={4}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="workspace-textarea resize-none"
             />
           </div>
         </div>
 
         {/* Footer with action buttons */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+        <div className="flex items-center justify-end gap-3 p-6 border-t border-[#e5ebf4]">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+            className="btn-secondary"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="btn-primary"
           >
             {loading ? 'Creating…' : 'Create Ticket'}
           </button>

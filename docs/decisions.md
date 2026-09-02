@@ -64,3 +64,7 @@ we added the categories to which our tickets could belong:
 -Account:for account related issues
 -Feature request:If user wants to request any features
 -Other:These were all the general categories In Which I could think the issues could have come,if the user query was anything else,then that ticket will come under this category
+
+---
+Added numbers on top of the bell which shows the SLA alerts,these numbers signify how many alerts are pending to be resolved
+---

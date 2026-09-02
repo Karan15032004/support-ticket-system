@@ -161,7 +161,7 @@ export default function WorklistPage() {
   const endItem    = Math.min(page * PAGE_SIZE, totalCount);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-shell">
       <AgentNav />
 
       <main className="max-w-7xl mx-auto px-4 py-8">
@@ -169,14 +169,14 @@ export default function WorklistPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">My Tickets</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h1 className="page-title">My Tickets</h1>
+            <p className="page-subtitle mt-1">
               {loading ? 'Loading…' : `${totalCount} ticket${totalCount !== 1 ? 's' : ''} assigned to you`}
             </p>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            className="btn-primary"
           >
             <span className="text-lg leading-none">+</span>
             New Ticket
@@ -184,7 +184,7 @@ export default function WorklistPage() {
         </div>
 
         {/* Search */}
-        <div className="mb-4">
+        <div className="workspace-input">
           <input
             type="text"
             value={searchInput}
@@ -205,7 +205,7 @@ export default function WorklistPage() {
           </select>
 
           <select value={priority} onChange={e => { setPriority(e.target.value); setPage(1); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            className="filter-control px-3 py-2 text-sm">
             <option value="">All Priorities</option>
             {['critical', 'high', 'medium', 'low'].map(p => (
               <option key={p} value={p}>{formatLabel(p)}</option>
@@ -213,7 +213,7 @@ export default function WorklistPage() {
           </select>
 
           <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            className="filter-control px-3 py-2 text-sm">
             <option value="">All Categories</option>
             {CATEGORY_OPTIONS.map(c => (
               <option key={c.value} value={c.value}>{c.label}</option>
@@ -236,7 +236,7 @@ export default function WorklistPage() {
               onClick={() => toggleSort(opt.value)}
               className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
                 sort === opt.value
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 font-medium'
+                  ? 'bg-[#eaf2ff] border-[#8db5ff] text-[#1764ed] font-medium'
                   : 'border-gray-200 text-gray-500 hover:bg-gray-50'
               }`}
             >
@@ -253,7 +253,7 @@ export default function WorklistPage() {
         )}
 
         {/* Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="workspace-card overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-gray-400">
               <p className="text-sm">Loading your tickets…</p>
@@ -273,7 +273,7 @@ export default function WorklistPage() {
           ) : (
             <table className="w-full">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
+                <tr className="bg-[#f3f7fd] border-b border-[#dce5f3]">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>

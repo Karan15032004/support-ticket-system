@@ -24,14 +24,16 @@ export default function BulkResultModal({ isOpen, onClose, results = [], title =
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div
+  className="absolute inset-0 bg-[#061633]/65 backdrop-blur-sm"
+  onClick={onClose}/>
 
       {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col border border-[#dce5f3]">
 
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <div className="px-6 py-4 border-b border-[#e5ebf4]">
+          <h2 className="text-lg font-bold text-[#0b1b3a]">{title}</h2>
           <p className="text-sm text-gray-500 mt-0.5">
             {succeeded.length} succeeded · {failed.length} failed · {results.length} total
           </p>
@@ -62,13 +64,12 @@ export default function BulkResultModal({ isOpen, onClose, results = [], title =
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200">
+        <div className="px-6 py-4 border-t border-[#e5ebf4]">
           <button
-            onClick={onClose}
-            className="w-full px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded-lg hover:bg-gray-900 transition-colors"
-          >
-            Done
-          </button>
+              onClick={onClose}
+              className="btn-primary w-full">
+              Done
+            </button>
         </div>
       </div>
     </div>
