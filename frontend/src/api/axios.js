@@ -28,9 +28,14 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Only redirect to login if we're NOT already on the login page.
+      // If we are on /login, the 401 is from a failed login attempt —
+      // let the LoginPage catch block handle it and show the error message.
+      if (!window.location.pathname.includes('/login')) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

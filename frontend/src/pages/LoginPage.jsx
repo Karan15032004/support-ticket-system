@@ -308,7 +308,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     className="forgot-button"
-                    onClick={() => {}}
+                    onClick={() => alert('Please contact your supervisor to reset your password.')}
                   >
                     Forgot password?
                   </button>

@@ -61,11 +61,23 @@
 
     function formatDate(dateStr) {
     if (!dateStr) return '';
-    return new Date(dateStr).toLocaleString('en-IN', {
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit',
+
+    // The backend stores timezone-naive timestamps in UTC.
+    // Add an explicit UTC marker before parsing so the browser does not
+    // incorrectly interpret the timestamp as local IST time.
+    // If a timezone is already present, leave it unchanged.
+    const normalizedDate = /(?:Z|[+-]\d{2}:?\d{2})$/.test(dateStr)
+        ? dateStr
+        : `${dateStr}Z`;
+
+    return new Date(normalizedDate).toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
     });
-    }
+}
 
     // ─── SLA Countdown (FIX: no setState in effect body — use initialSeconds directly) ─
 
