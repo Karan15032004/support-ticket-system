@@ -40,13 +40,23 @@ function formatLabel(str) {
   return str ? str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
 }
 
+// Backend stores timestamps as UTC but currently serializes them
+// without a timezone suffix. Explicitly mark timezone-less timestamps as UTC
+// before JavaScript parses them, otherwise the browser treats them as IST.
 function timeAgo(dateStr) {
-  const diff    = Date.now() - new Date(dateStr).getTime();
+  if (!dateStr) return 'just now';
+
+  const normalizedDate = /(?:Z|[+-]\d{2}:?\d{2})$/.test(dateStr)
+    ? dateStr
+    : `${dateStr}Z`;
+
+  const diff = Math.max(0, Date.now() - new Date(normalizedDate).getTime());
   const minutes = Math.floor(diff / 60000);
-  const hours   = Math.floor(minutes / 60);
-  const days    = Math.floor(hours / 24);
-  if (days > 0)    return `${days}d ago`;
-  if (hours > 0)   return `${hours}h ago`;
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
   if (minutes > 0) return `${minutes}m ago`;
   return 'just now';
 }
