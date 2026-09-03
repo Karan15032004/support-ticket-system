@@ -414,47 +414,6 @@ export default function LoginPage() {
             </form>
 
 
-            {/* Divider */}
-            <div className="login-divider">
-              <span />
-              <strong>OR</strong>
-              <span />
-            </div>
-
-
-            {/* Security */}
-            <div className="secure-card">
-
-              <div className="secure-icon">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M12 3 20 6v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-3Z"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                  />
-                  <path
-                    d="m8.5 12 2.2 2.2 4.8-5"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-
-              <div>
-                <strong>
-                  Secure Login
-                </strong>
-
-                <p>
-                  Your data is protected with enterprise-grade security.
-                </p>
-              </div>
-
-            </div>
-
-
             {/* Footer */}
             <div className="login-bottom-text">
               SupportHub • Ticket Management System
