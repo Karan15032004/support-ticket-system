@@ -1,5 +1,4 @@
-
-    import { useState, useEffect} from 'react';
+import { useState, useEffect} from 'react';
     import { useParams, useNavigate } from 'react-router-dom';
     import { useAuth } from '../../context/AuthContext';
     import SupervisorNav from '../../components/SupervisorNav';
@@ -7,6 +6,7 @@
     import {
     getTicket, getReplies, getEvents, getCollaborators, getAgents,
     addReply, changeStatus, addCollaborator, removeCollaborator,
+    updateTicket, archiveTicket, restoreTicket,
     } from '../../api/tickets';
 
     // ─── Constants ──────────────────────────────────────────────────────────────
@@ -81,19 +81,23 @@
 
     // ─── SLA Countdown (FIX: no setState in effect body — use initialSeconds directly) ─
 
-    function SLACountdown({ initialSeconds }) {
+    function SLACountdown({ initialSeconds,ticketStatus}) {
     // Start counting from initialSeconds, ticking down every second
     const [offset, setOffset] = useState(0);
 
     useEffect(() => {
-        // Reset offset whenever we get a fresh initialSeconds from the parent
-        setOffset(0);
-        // Set up the interval to update the offset every second
-        const interval = setInterval(() => {
-        setOffset(prev => prev + 1);   // increment offset, subtract from initialSeconds
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [initialSeconds]);  // eslint-disable-line react-hooks/exhaustive-deps
+    // Reset offset whenever we get a fresh initialSeconds from the parent
+    setOffset(0);
+    // Only tick if status is NOT pending (pause the clock when waiting on customer)
+    if (ticketStatus === 'pending') {
+        return; // Don't start interval if pending — clock is paused
+    }
+    // Set up the interval to update the offset every second
+    const interval = setInterval(() => {
+    setOffset(prev => prev + 1);   // increment offset, subtract from initialSeconds
+    }, 1000);
+    return () => clearInterval(interval);
+}, [initialSeconds, ticketStatus]);  // eslint-disable-line react-hooks/exhaustive-deps
 
     if (initialSeconds === null || initialSeconds === undefined) {
         return <span className="text-gray-400 text-sm">No SLA set</span>;
@@ -145,6 +149,9 @@
     const [selectedAgentId, setSelectedAgentId] = useState('');
     const [addingCollab,    setAddingCollab]    = useState(false);
     const [changingStatus,  setChangingStatus]  = useState(false);
+    const [showPriorityModal, setShowPriorityModal] = useState(false);
+    const [changingPriority, setChangingPriority] = useState(false);
+    const [archiving, setArchiving] = useState(false);
 
     // FIX: loadAll defined BEFORE useEffect so it's in scope when useEffect runs
     async function loadAll() {
@@ -238,9 +245,43 @@
         }
     }
 
+    // ── Archive / Restore ──────────────────────────────────────────────────────────
+    async function handleArchiveToggle() {
+        setArchiving(true);
+        try {
+            const updated = ticket.archived
+                ? await restoreTicket(id)
+                : await archiveTicket(id);
+            setTicket(updated);
+            const eventsData = await getEvents(id);
+            setEvents(eventsData);
+        } catch (err) {
+            alert(err.response?.data?.detail || 'Archive/restore failed.');
+        } finally {
+            setArchiving(false);
+        }
+    }
+
+    // ── Change Priority ────────────────────────────────────────────────────────────
+    async function handleChangePriority(newPriority) {
+        setChangingPriority(true);
+        try {
+            const updated = await updateTicket(id, { priority: newPriority });
+            setTicket(updated);
+            const eventsData = await getEvents(id);
+            setEvents(eventsData);
+            setShowPriorityModal(false);
+        } catch (err) {
+            alert(err.response?.data?.detail || 'Failed to change priority.');
+        } finally {
+            setChangingPriority(false);
+        }
+    }
+
     // ── Derived values ──────────────────────────────────────────────────────────
 
     const isSupervisor     = user?.role === 'supervisor';
+    const isCollaborator   = collaborators.some(c => c.agent_id === user?.id);  
     const validNextStatuses = LEGAL_TRANSITIONS[ticket?.status] || [];
 
     const existingAgentIds = new Set([
@@ -284,6 +325,25 @@
 
         <main className="app-main max-w-4xl mx-auto px-4 py-8 space-y-6">
 
+            {/* ARCHIVED BANNER */}
+            {ticket.archived && (
+              <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-5 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📦</span>
+                  <span className="text-sm font-medium text-amber-800">
+                    This ticket is archived and hidden from the main queue.
+                  </span>
+                </div>
+                <button
+                  onClick={handleArchiveToggle}
+                  disabled={archiving}
+                  className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {archiving ? "Restoring…" : "📤 Restore Ticket"}
+                </button>
+              </div>
+            )}
+
             {/* 1. HEADER */}
             <div className="workspace-card p-6">
             <div className="flex items-start justify-between gap-4">
@@ -291,9 +351,21 @@
                 <p className="text-xs text-[#7b8da8] mb-1">Ticket #{ticket.id}</p>
                 <h1 className="text-xl font-bold text-[#081a3a]">{ticket.subject}</h1>
                 </div>
-                <span className={`flex-shrink-0 px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[ticket.status]}`}>
-                {formatLabel(ticket.status)}
-                </span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[ticket.status]}`}>
+                    {formatLabel(ticket.status)}
+                  </span>
+                  {/* Archive button visible to both supervisors and agents */}
+                  {!ticket.archived && (
+                    <button
+                      onClick={handleArchiveToggle}
+                      disabled={archiving}
+                      className="px-3 py-1.5 border border-[#dce5f3] text-[#64748b] text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                    >
+                      {archiving ? "…" : "📦 Archive"}
+                    </button>
+                  )}
+                </div>
             </div>
 
             {validNextStatuses.length > 0 && (
@@ -301,7 +373,7 @@
                 <p className="text-xs text-[#58708f] mb-2">Move to:</p>
                 <div className="flex flex-wrap gap-2">
                     {validNextStatuses.map(s => {
-                    if (s === 'closed' && !isSupervisor) return null;
+                    /* All valid statuses shown to both supervisors and agents */
                     return (
                         <button
                         key={s}
@@ -326,9 +398,26 @@
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                 <p className="text-xs text-[#58708f] mb-1">Priority</p>
-                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${PRIORITY_STYLES[ticket.priority]}`}>
+                <div className="flex items-center gap-2">
+                  <span 
+                    className={`inline-block px-3 py-1 rounded text-sm font-semibold cursor-pointer hover:shadow-md transition-shadow ${PRIORITY_STYLES[ticket.priority]}`}
+                    onClick={() => {
+                      if ((isSupervisor || ticket.assignee_id === user?.id || isCollaborator) && !ticket.archived) {
+                        setShowPriorityModal(true);
+                      }
+                    }}
+                  >
                     {formatLabel(ticket.priority)}
-                </span>
+                  </span>
+                  {(isSupervisor || ticket.assignee_id === user?.id || isCollaborator) && !ticket.archived && (
+                    <button
+                      onClick={() => setShowPriorityModal(true)}
+                      className="text-xs text-[#1764ed] hover:text-[#1253c7] font-medium"
+                    >
+                      Change
+                    </button>
+                  )}
+                </div>
                 </div>
                 <div>
                 <p className="text-xs text-[#58708f] mb-1">Category</p>
@@ -507,7 +596,7 @@
 
             <div className="workspace-card p-5">
                 <h2 className="text-sm font-bold text-[#18345f] mb-3">SLA Status</h2>
-                <SLACountdown initialSeconds={ticket.sla_remaining_seconds} />
+                <SLACountdown initialSeconds={ticket.sla_remaining_seconds} ticketStatus={ticket.status} />
                 {ticket.response_due_at && (
                 <p className="text-xs text-[#7b8da8] mt-2">Due: {formatDate(ticket.response_due_at)}</p>
                 )}
@@ -562,6 +651,44 @@
                 </ol>
             )}
             </div>
+
+        {/* Priority Change Modal */}
+        {showPriorityModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full mx-4">
+              <div className="px-6 py-4 border-b border-[#e5ebf4]">
+                <h2 className="text-lg font-bold text-[#0b1b3a]">Change Priority</h2>
+                <p className="text-xs text-[#7b8da8] mt-1">Select a new priority level for this ticket</p>
+              </div>
+              <div className="px-6 py-4 space-y-2">
+                {['critical', 'high', 'medium', 'low'].map(priority => (
+                  <button
+                    key={priority}
+                    onClick={() => handleChangePriority(priority)}
+                    disabled={changingPriority}
+                    className={`w-full px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                      ticket.priority === priority
+                        ? `${PRIORITY_STYLES[priority]} ring-2 ring-offset-2 ring-[#2878ff]`
+                        : `${PRIORITY_STYLES[priority]} hover:shadow-md`
+                    } disabled:opacity-50`}
+                  >
+                    {formatLabel(priority)}
+                    {ticket.priority === priority && ' ✓'}
+                  </button>
+                ))}
+              </div>
+              <div className="px-6 py-3 bg-[#f5f8ff] rounded-b-xl flex justify-end gap-2">
+                <button
+                  onClick={() => setShowPriorityModal(false)}
+                  disabled={changingPriority}
+                  className="px-4 py-2 text-sm font-medium text-[#64748b] hover:text-[#0b1b3a] hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         </main>
         </div>

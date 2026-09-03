@@ -1,10 +1,5 @@
 /**
  * App.jsx — Root component: routing + auth context
- *
- * BUG FIXED: PrivateRoute was checking { token } from useAuth(),
- * but AuthContext only exposes { user, login, logout } — no token.
- * token was always undefined → every protected route redirected to /login.
- * Fix: check { user } instead. user is null when logged out, object when logged in.
  */
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
@@ -17,9 +12,9 @@ import TicketListPage   from './pages/supervisor/TicketListPage';
 import WorklistPage     from './pages/agent/WorklistPage';
 import TicketDetailPage from './pages/shared/TicketDetailPage';
 import AlertsPage       from './pages/shared/AlertsPage';
+import ArchivedPage     from './pages/shared/ArchivedPage';  // ← NEW
 
 // PrivateRoute: redirects to /login if not authenticated
-// FIX: use 'user' not 'token' — token is not in AuthContext
 function PrivateRoute({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -27,7 +22,6 @@ function PrivateRoute({ children }) {
 }
 
 // DefaultRedirect: after login, send user to the right home screen
-// FIX: use 'user' not 'token'
 function DefaultRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -63,6 +57,11 @@ function AppRoutes() {
       } />
       <Route path="/alerts" element={
         <PrivateRoute><AlertsPage /></PrivateRoute>
+      } />
+
+      {/* Archived tickets — both supervisor and agent */}
+      <Route path="/archived" element={
+        <PrivateRoute><ArchivedPage /></PrivateRoute>
       } />
 
       {/* Catch-all */}

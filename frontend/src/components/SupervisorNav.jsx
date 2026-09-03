@@ -12,7 +12,11 @@ export default function SupervisorNav() {
     <nav className="bg-white border-b border-[#dce5f3] px-6 flex items-center justify-between h-16 shadow-[0_2px_12px_rgba(15,35,75,0.05)]">
 
       {/* Logo */}
-      <div className="flex items-center gap-3">
+      <NavLink
+        to="/dashboard"
+        className="flex items-center gap-3"
+        aria-label="Go to Dashboard"
+      >
 
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#2878ff] to-[#1459df] flex items-center justify-center shadow-md">
           <span className="text-white text-sm font-bold">
@@ -30,7 +34,7 @@ export default function SupervisorNav() {
           </span>
         </div>
 
-      </div>
+      </NavLink>
 
       {/* Navigation */}
       <div className="flex items-center gap-1">
@@ -59,6 +63,19 @@ export default function SupervisorNav() {
           }
         >
           Tickets
+        </NavLink>
+
+        <NavLink
+          to="/archived"
+          className={({ isActive }) =>
+            `px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              isActive
+                ? 'bg-[#eaf2ff] text-[#1764ed] shadow-sm'
+                : 'text-[#64748b] hover:bg-[#f3f7fd] hover:text-[#0b1b3a]'
+            }`
+          }
+        >
+          📦 Archived
         </NavLink>
 
       </div>

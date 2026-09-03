@@ -529,6 +529,7 @@ def list_tickets(
     search: Optional[str] = None,
     sort: Optional[str] = "updated_at",
     order: Optional[str] = "desc",
+    include_archived: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -549,6 +550,7 @@ def list_tickets(
         db, current_user,
         search=search, ticket_status=status, priority=priority,
         category=category, assignee_id=assignee_id,
+        include_archived=include_archived,
     )
 
     total_count = query.count()
@@ -578,10 +580,18 @@ def archive_ticket(
     """
     Soft-deletes a ticket by setting archived=True.
     Archived tickets are hidden from all queues but data is preserved.
-    Only supervisors can archive.
+    Supervisors can archive any ticket. Agents can archive only their own tickets.
     """
-    if current_user.role != UserRole.supervisor:
-        raise HTTPException(status_code=403, detail="Only supervisors can archive tickets")
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    # Allow if supervisor OR if agent is assignee/collaborator
+    if not can_user_act_on_ticket(ticket, current_user, db):
+        raise HTTPException(status_code=403, detail="You don't have access to this ticket")
+    
+    if ticket.archived:
+        raise HTTPException(status_code=400, detail="Ticket is already archived")
 
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
@@ -615,9 +625,21 @@ def restore_ticket(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Restores an archived ticket. Only supervisors can restore."""
-    if current_user.role != UserRole.supervisor:
-        raise HTTPException(status_code=403, detail="Only supervisors can restore tickets")
+    """
+    Restores an archived ticket.
+    Supervisors can restore any ticket. Agents can restore only their own tickets.
+    """
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    # Allow if supervisor OR if agent is assignee/collaborator
+    if not can_user_act_on_ticket(ticket, current_user, db):
+        raise HTTPException(status_code=403, detail="You don't have access to this ticket")
+    
+    if not ticket.archived:
+        raise HTTPException(status_code=400, detail="Ticket is not archived")
+    # ... rest of the function
 
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
@@ -749,8 +771,8 @@ def change_ticket_status(
             ),
         )
 
-    if new_status == TicketStatus.closed and current_user.role == UserRole.agent:
-        raise HTTPException(status_code=403, detail="Agents cannot close tickets")
+    #if new_status == TicketStatus.closed and current_user.role == UserRole.agent:
+        #raise HTTPException(status_code=403, detail="Agents cannot close tickets")
 
     if old_status == TicketStatus.closed:
         if not ticket.closed_at:
