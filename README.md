@@ -463,13 +463,6 @@ The CSV export and the ticket list use the exact same filtering function. If we 
 
 ---
 
-## 📚 Assignment Context
-
-**Course:** Thapar University — Placement Preparation Program  
-**Assignment:** 04 — Full-Stack Web Application  
-**Developer:** Karan Nigam  
-**GitHub:** [@Karan15032004](https://github.com/Karan15032004)
-
 ### All 10 Required Features: Status
 
 | # | Feature | Status |
