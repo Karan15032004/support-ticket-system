@@ -11,7 +11,7 @@ SupportHub uses six PostgreSQL tables. The schema is relational and normalised â
 All six tables were created manually via raw SQL in the Supabase dashboard. `Base.metadata.create_all()` is commented out in `main.py` because the local network blocks port 5432 at startup.
 
 > **ER Diagram**
-> ![SupportHub Database ER Diagram](./images/schema-er-diagram.png)
+> ![SupportHub Database ER Diagram](./image/schema-er-diagram.png)
 
 ---
 
