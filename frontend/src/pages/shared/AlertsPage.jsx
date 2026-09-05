@@ -76,7 +76,7 @@ function AlertCard({ alert, isSupervisor, onAcknowledge, acknowledging }) {
     : 'bg-yellow-100 text-yellow-700 border border-yellow-200';
 
   return (
-    <div className={`rounded-xl border p-5 ${cardStyle} flex items-start justify-between gap-4`}>
+    <div className={`rounded-xl border p-5 ${cardStyle} flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4`}>
 
       {/* Left: ticket info */}
       <div className="flex-1 min-w-0">

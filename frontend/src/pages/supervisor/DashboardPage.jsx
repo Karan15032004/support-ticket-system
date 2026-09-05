@@ -225,7 +225,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard
               label="Open Tickets"
               value={stats?.open_count}
@@ -406,15 +406,15 @@ export default function DashboardPage() {
                   <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Open
                   </th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Pending
-                  </th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Total Active
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
+                  <th className="hidden sm:table-cell text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+           Pending
+         </th>
+         <th className="hidden sm:table-cell text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+           Total Active
+         </th>
+         <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+           Status
+         </th>
                 </tr>
               </thead>
 

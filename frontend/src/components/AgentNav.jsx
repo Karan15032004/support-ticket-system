@@ -44,7 +44,7 @@ export default function AgentNav() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="hidden sm:flex items-center gap-2">
           <span className="font-bold text-[#0b1b3a] text-sm">
             SupportHub
           </span>
@@ -82,8 +82,10 @@ export default function AgentNav() {
             }`
           }
         >
-          📦 Archived
-        </NavLink>
+        <span className="hidden sm:inline">📦 </span>
+        <span className="hidden sm:inline">Archived</span>
+        <span className="sm:hidden">📦</span>
+      </NavLink>
 
       </div>
 
@@ -116,7 +118,7 @@ export default function AgentNav() {
           )}
         </NavLink>
 
-        <div className="text-right">
+        <div className="text-right hidden sm:block">
           <p className="text-sm font-semibold text-[#0b1b3a]">
             {user?.name}
           </p>

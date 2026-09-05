@@ -285,10 +285,10 @@ export default function WorklistPage() {
               <thead>
                 <tr className="bg-[#f3f7fd] border-b border-[#dce5f3]">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ticket</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">SLA</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Updated</th>
+<th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+<th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
+<th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">SLA</th>
+<th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Updated</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -298,14 +298,14 @@ export default function WorklistPage() {
                     onClick={() => navigate(`/tickets/${ticket.id}`)}
                     className="hover:bg-emerald-50 cursor-pointer transition-colors group"
                   >
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-1">
-                        #{ticket.id} — {ticket.subject}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {ticket.requester_name} · {formatLabel(ticket.category)}
-                      </p>
-                    </td>
+                    <td className="px-4 py-3 max-w-[160px] sm:max-w-none">
+  <p className="text-sm font-medium text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-1">
+    #{ticket.id} — {ticket.subject}
+  </p>
+  <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+    {ticket.requester_name} · {formatLabel(ticket.category)}
+  </p>
+</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[ticket.status]}`}>
                         {formatLabel(ticket.status)}
@@ -317,11 +317,11 @@ export default function WorklistPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <SLABadge seconds={ticket.sla_remaining_seconds} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
-                      {timeAgo(ticket.updated_at)}
-                    </td>
+  <SLABadge seconds={ticket.sla_remaining_seconds} />
+</td>
+<td className="px-4 py-3 text-xs text-gray-500">
+  {timeAgo(ticket.updated_at)}
+</td>
                   </tr>
                 ))}
               </tbody>

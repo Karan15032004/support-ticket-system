@@ -474,9 +474,9 @@ export default function TicketListPage() {
                   <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Ticket</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Priority</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Assignee</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assignee</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">SLA</th>
-                  <th className="text-left px-4 py-3 text-xs font-bold text-[#58708f] uppercase tracking-wider">Updated</th>
+                  <th className="hidden sm:table-cell text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Updated</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf1f7]">
@@ -496,7 +496,7 @@ export default function TicketListPage() {
                         className="rounded border-gray-300 accent-[#2878ff]"
                       />
                     </td>
-                    <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
+                    <td className="px-4 py-3 max-w-[150px] sm:max-w-none" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       <p className="text-sm font-semibold text-[#0b1b3a] group-hover:text-[#1764ed] transition-colors line-clamp-1">
                         #{ticket.id} — {ticket.subject}
                       </p>
@@ -514,13 +514,13 @@ export default function TicketListPage() {
                         {formatLabel(ticket.priority)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#405572]" onClick={() => navigate(`/tickets/${ticket.id}`)}>
+                    <td className="px-4 py-3 text-sm text-[#405572] hidden sm:table-cell" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       {ticket.assignee?.name ?? <span className="text-[#94a3b8] italic">Unassigned</span>}
                     </td>
                     <td className="px-4 py-3" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       <SLABadge seconds={ticket.sla_remaining_seconds} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-[#64748b]" onClick={() => navigate(`/tickets/${ticket.id}`)}>
+                    <td className="px-4 py-3 text-xs text-[#64748b] hidden sm:table-cell" onClick={() => navigate(`/tickets/${ticket.id}`)}>
                       {timeAgo(ticket.updated_at)}
                     </td>
                   </tr>

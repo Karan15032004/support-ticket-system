@@ -24,7 +24,7 @@ export default function SupervisorNav() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="hidden sm:flex items-center gap-2">
           <span className="font-bold text-[#0b1b3a] text-sm">
             SupportHub
           </span>
@@ -49,8 +49,9 @@ export default function SupervisorNav() {
             }`
           }
         >
-          Dashboard
-        </NavLink>
+  <span className="hidden sm:inline">Dashboard</span>
+  <span className="sm:hidden">🏠</span>
+</NavLink>
 
         <NavLink
           to="/tickets"
@@ -62,8 +63,9 @@ export default function SupervisorNav() {
             }`
           }
         >
-          Tickets
-        </NavLink>
+  <span className="hidden sm:inline">Tickets</span>
+  <span className="sm:hidden">📦</span>
+</NavLink>
 
         <NavLink
           to="/archived"
@@ -103,7 +105,7 @@ export default function SupervisorNav() {
           </svg>
         </NavLink>
 
-        <div className="text-right">
+        <div className="text-right hidden sm:block">
           <p className="text-sm font-semibold text-[#0b1b3a]">
             {user?.name}
           </p>

@@ -346,7 +346,7 @@ import { useState, useEffect} from 'react';
 
             {/* 1. HEADER */}
             <div className="workspace-card p-6">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex-1">
                 <p className="text-xs text-[#7b8da8] mb-1">Ticket #{ticket.id}</p>
                 <h1 className="text-xl font-bold text-[#081a3a]">{ticket.subject}</h1>
