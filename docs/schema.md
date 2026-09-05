@@ -15,7 +15,7 @@ All six tables were created manually via raw SQL in the Supabase dashboard. `Bas
 
 ---
 
-## 2. Table Reference
+## 2. Tables Used
 
 ### `users`
 
@@ -187,11 +187,10 @@ graph LR
     subgraph APP ["Application Enforces"]
         A1["Legal status transitions\n(LEGAL_TRANSITIONS dict)\ne.g. New → Closed is rejected"]
         A2["7-day reopen window\nafter closing"]
-        A3["Agents cannot close tickets\ndirectly"]
-        A4["Ticket-level authorization\n(assignee or collaborator only)"]
-        A5["Duplicate collaborator check\nbefore insert"]
-        A6["replies and ticket_events\nnever updated or deleted\n(no endpoints exist)"]
-        A7["SLA alert refire\non ticket reopen"]
+        A3["Ticket-level authorization\n(assignee or collaborator only)"]
+        A4["Duplicate collaborator check\nbefore insert"]
+        A5["replies and ticket_events\nnever updated or deleted\n(no endpoints exist)"]
+        A6["SLA alert refire\non ticket reopen"]
     end
 ```
 
@@ -200,17 +199,6 @@ graph LR
 Database constraints handle structural integrity — things that should *never* be possible regardless of how the application is called. If a FK constraint didn't exist, a reply could reference a ticket that was deleted; the UI would break silently.
 
 Application constraints handle business rules — things that are structurally valid data but violate the workflow. A status jump from `new` to `closed` is valid data (both are legitimate enum values), but it's an illegal business operation. That check belongs in the code, not the schema.
-
-| Constraint | Where enforced | Why |
-|-----------|---------------|-----|
-| Ticket must exist before reply | Database (FK) | Structural integrity |
-| User must exist before ticket | Database (FK) | Structural integrity |
-| Duplicate collaborator prevented | **Both** | DB composite PK is final; app checks first for a clean error message |
-| SLA alert one-per-ticket | Database (UNIQUE) | Structural — one alert record maximum |
-| `new → closed` rejected | Application | Business rule — structurally valid, operationally illegal |
-| 7-day reopen window | Application | Business rule — depends on elapsed time, not structure |
-| Replies never deleted | Application | No delete endpoint exists — not a DB trigger |
-| `ticket_events` never modified | Application | No update/delete endpoints — not a DB trigger |
 
 ---
 
@@ -240,10 +228,8 @@ At current scale (~50 tickets, 5 users), no query is under meaningful load. At 1
 
 | Bottleneck | Why It Breaks | Fix |
 |-----------|--------------|-----|
-| `GET /tickets/` full table scan | Every page load queries the full `tickets` table with `WHERE + ORDER BY + LIMIT`. Without indexes on `status`, `priority`, `assignee_id`, and `updated_at`, PostgreSQL scans every row. | Add composite indexes on common filter combinations: `(status, assignee_id)`, `(priority, status)`, `updated_at DESC` |
-| `ticket_events` scans | The timeline endpoint does `SELECT * FROM ticket_events WHERE ticket_id = ?`. Without an index on `ticket_id`, this is a full table scan across tens of thousands of rows. | Index on `(ticket_id, created_at)` |
-| SLA remaining computed per-request | `compute_sla_remaining()` runs on every ticket in every list response. At 20 tickets per page × frequent refreshes, this stays fast — but has no caching. | Materialized view updated on status change, or cache the computed value in Redis |
-| `sla_alerts` background check | Currently alerts are checked reactively (when a ticket is loaded). A proper background job scanning all tickets for breaches would need to run efficiently. | Scheduled task with an index on `response_due_at` |
-| No soft-delete index | `WHERE archived = false` filters every query. Without a partial index on `archived`, this condition touches every row. | Partial index: `CREATE INDEX ON tickets (id) WHERE archived = false` |
+| `GET /tickets/` full table scan | As the number of tickets grows, every ticket-list request has to filter, sort, and paginate a much larger table. | Add indexes on the fields most commonly used for filtering and sorting, such as status, assignee_id, and updated_at. |
+| `ticket_events` scans | Add indexes on the fields most commonly used for filtering and sorting, such as status, assignee_id, and updated_at. | Add an index on (ticket_id, created_at) so the database can quickly find a ticket's events in chronological order. |
+| SLA remaining computed per-request | The remaining SLA time is calculated whenever tickets are returned. This is perfectly fine at the current scale, but repeated calculations across many tickets and frequent requests could add up as usage grows. | If needed at larger scale, cache or precompute the SLA value instead of recalculating it on every request. |
 
 The two most impactful immediate fixes would be indexes on `tickets(status, assignee_id, updated_at)` and `ticket_events(ticket_id, created_at)`. These alone would handle the majority of the query load at 100x volume.

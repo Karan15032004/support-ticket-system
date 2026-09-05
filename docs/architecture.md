@@ -1,7 +1,4 @@
 # SupportHub — Architecture
-
-This document covers the system's moving pieces, how they communicate, where they run, how a real request travels end-to-end, and what was deliberately left out of scope.
-
 ---
 
 ## 1. System Overview
@@ -214,29 +211,7 @@ sequenceDiagram
 
 ---
 
-## 6. Architectural Examples
-
-### Authentication
-
-`POST /auth/login` verifies credentials using **Argon2** (`argon2-cffi` — bcrypt is incompatible with Python 3.13). The JWT encodes `{user_id, role}`. The frontend stores it, sets it as the Axios default header, then calls `GET /auth/me` to populate `AuthContext`. A single login page handles all roles; the server's response determines where to redirect (`/dashboard` for supervisor, `/my-tickets` for agent).
-
-### Ticket Lifecycle + SLA
-
-Five statuses: `new → open → pending → resolved → closed`. The `LEGAL_TRANSITIONS` dict defines legal moves server-side. Illegal transitions return a descriptive 400 listing what is allowed. The 7-day reopen window after closing is enforced via `closed_at + 7 days > now()`.
-
-SLA targets are set at creation time: Critical 1h · High 4h · Medium 8h · Low 24h. The clock pauses when status is `pending` and resumes on return to `open`, tracked via `pending_since` and `total_paused_seconds` on the ticket row.
-
-### Immutable Event Timeline
-
-Every state-changing action appends a row to `ticket_events`. No `UPDATE` or `DELETE` endpoint exists for this table. `GET /tickets/{id}/events` returns all rows ordered by `created_at ASC`. Values are stored as human-readable strings, so the timeline is readable without additional joins.
-
-### Server-Side Filtering and CSV Export
-
-`GET /tickets/` accepts `?search`, `?status`, `?priority`, `?category`, `?assignee_id`, `?sort`, `?order`, `?page`, `?page_size`. All filtering and pagination happen in SQL via the shared `build_filtered_query()` helper. `total_count` is computed with `query.count()` before `LIMIT/OFFSET`. `GET /tickets/export` uses the same helper, so the CSV always matches what is visible on screen.
-
----
-
-## 7. What We Deliberately Did Not Build
+## 6. What We Deliberately Did Not Build
 
 | Boundary | Rationale |
 |----------|-----------|
@@ -245,10 +220,9 @@ Every state-changing action appends a row to `ticket_events`. No `UPDATE` or `DE
 | **WebSockets / real-time push** | Polling `GET /alerts/count` every 60s is sufficient for the single-team use case. WebSocket connection management adds complexity without meaningful benefit at this scale. |
 | **File/attachment storage** | Tickets carry text only. Attachments require object storage, upload endpoints, and content-type handling — a distinct infrastructure concern outside the current scope. |
 | **Password reset** | No email delivery is configured, so no reset link can be delivered. Credentials are seeded directly into the database. |
-| **DB-level immutability triggers** | `replies` and `ticket_events` immutability is enforced at the application layer (no update/delete endpoints exist). PostgreSQL triggers would add defence-in-depth but were outside the time budget. |
 
 ---
 
-## 8. Architecture Summary
+## 7. Architecture Summary
 
 SupportHub is a three-tier web application with a strict separation of concerns. The React frontend owns presentation and navigation; FastAPI owns all business logic, validation, and authorization; PostgreSQL owns persistence. JWT-based authentication flows through every protected request via a shared `get_current_user` FastAPI dependency. Role and ticket-level authorization is enforced server-side in all cases — the frontend reflects permissions, it does not enforce them. The SLA engine, lifecycle validation, immutable audit log, and server-side filtering are all backend concerns. Frontend and backend are deployed independently — Vercel for the SPA, Render for the API, Supabase for the database — communicating over HTTPS with CORS configured explicitly.
