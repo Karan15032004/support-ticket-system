@@ -14,7 +14,6 @@ This document records the AI interactions that materially shaped the project —
 | Phase 3 — Advanced features | Server-side filtering, bulk actions, CSV export, archive/restore | All 10 core features complete |
 | Testing | 30 critical test cases covering all requirements | Pre-deployment confidence |
 | Deployment | Step-by-step Render + Vercel setup, CORS config, env vars | Live at production URLs |
-| Documentation | architecture.md, plan.md, decisions.md, ai-prompts.md | All 5 docs written |
 
 ---
 
