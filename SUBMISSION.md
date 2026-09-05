@@ -21,11 +21,13 @@ Fill this in and commit it. This is the first file we open.
 
 ## Demo credentials
 
-| Role | Email | Password | What you'll see|
-|------|-------|----------|
-| Supervisor| supervisor@test.com| SupervisorPass123|Full dashboard, all tickets, SLA alerts, bulk actions, CSV export ||
-| Agent | agent1@test.com|password123  |Only assigned tickets, own SLA alerts with Acknowledge button|
-| Agent |agent2@test.com |password123  |Different set of assigned tickets |
+| Role | Email | Password | What you'll see |
+|------|-------|----------|----------------|
+| Supervisor | supervisor@test.com | SupervisorPass123 | Full dashboard, all tickets, SLA alerts, bulk actions, CSV export |
+| Agent | agent1@test.com | password123 | Only assigned tickets, own SLA alerts with Acknowledge button |
+| Agent | agent2@test.com | password123 | Different set of assigned tickets |
+| Agent | agent3@test.com | password123 | Different set of assigned tickets |
+| Agent | agent4@test.com | password123 | Different set of assigned tickets |
 
 
 ## Stack
@@ -46,7 +48,7 @@ Mark each honestly. Partial is fine — say what is partial.
 |---|------|--------|-------|
 | 1 | Accounts and roles | Done | Supervisor and Agent roles with server-side enforcement on every endpoint — not just UI hiding |
 | 2 | Tickets | Done | Create, edit, archive, restore — soft delete preserves full history |
-| 3 | Replies inside tickets | Done | Customer-visible replies and internal notes, visually distinct (amber background for internal)
+| 3 | Replies inside tickets | Done | Customer-visible replies and internal notes, visually distinct (amber background for internal)|
 | 4 | Ticket lifecycle | Done | New → Open → Pending → Resolved → Closed with SLA pause on Pending, 7-day reopen window enforced server-side |
 | 5 | Collaborators | Done | Primary assignee + unlimited collaborators; agents see all tickets where they are assignee or collaborator |
 | 6 | Finding tickets | Done | Server-side search, filter by status/priority/category/assignee, sort by 3 fields, pagination with total count |
