@@ -131,6 +131,8 @@ def get_alert_count(
 
     for ticket in tickets:
         remaining = compute_sla_remaining(ticket)
+        if ticket.status == TicketStatus.pending:
+            continue
         if remaining is None or remaining >= 3600:
             continue  # not an alert yet
 
@@ -172,6 +174,9 @@ def get_alerts(
 
     for ticket in tickets:
         remaining = compute_sla_remaining(ticket)
+        if ticket.status == TicketStatus.pending:
+            continue
+
         if remaining is None or remaining >= 3600:
             continue  # not an alert
 
