@@ -154,4 +154,23 @@ No joins. No scanning. The fields update atomically in the same transaction as t
 **Impact:** Priority changes log to `ticket_events` ("Priority changed from Medium → Critical by [name]") and automatically recalculate `response_due_at` based on the new SLA target. The frontend priority badge updates immediately.
 
 ---
+## Decision 9 — Agents Can Archive Tickets (Reversed from Original)
 
+**When:** Pre-deployment testing, after all features were confirmed working.
+
+**What was originally decided:** Only supervisors could archive and restore tickets.
+
+**What was reversed to:** Any user who can act on a ticket — supervisor,
+primary assignee, or collaborator — can archive and restore it.
+
+**Why it was reversed:** During testing, agents found they couldn't archive
+tickets they had just resolved and closed. An agent who resolves a ticket
+should be able to remove it from their active worklist without needing to ask
+a supervisor. The backend already had `can_user_act_on_ticket()` as a shared
+authorization function — extending archive/restore to use it instead of a
+hardcoded supervisor check was a two-line backend change.
+
+**Impact:** `archive_ticket()` and `restore_ticket()` now call
+`can_user_act_on_ticket()` instead of checking
+`current_user.role == supervisor`. The frontend condition
+`isSupervisor && !ticket.archived` was updated to just `!ticket.archived`.

@@ -229,7 +229,7 @@ At current scale (~50 tickets, 5 users), no query is under meaningful load. At 1
 | Bottleneck | Why It Breaks | Fix |
 |-----------|--------------|-----|
 | `GET /tickets/` full table scan | As the number of tickets grows, every ticket-list request has to filter, sort, and paginate a much larger table. | Add indexes on the fields most commonly used for filtering and sorting, such as status, assignee_id, and updated_at. |
-| `ticket_events` scans | Add indexes on the fields most commonly used for filtering and sorting, such as status, assignee_id, and updated_at. | Add an index on (ticket_id, created_at) so the database can quickly find a ticket's events in chronological order. |
+| `ticket_events` scans | The timeline endpoint queries all events for a ticket with no index on `ticket_id`. Without an index, PostgreSQL scans the entire events table for each request. At 50,000+ rows this becomes slow. | Add an index on `(ticket_id, created_at)` so events are found instantly in chronological order. |
 | SLA remaining computed per-request | The remaining SLA time is calculated whenever tickets are returned. This is perfectly fine at the current scale, but repeated calculations across many tickets and frequent requests could add up as usage grows. | If needed at larger scale, cache or precompute the SLA value instead of recalculating it on every request. |
 
 The two most impactful immediate fixes would be indexes on `tickets(status, assignee_id, updated_at)` and `ticket_events(ticket_id, created_at)`. These alone would handle the majority of the query load at 100x volume.
